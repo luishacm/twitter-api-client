@@ -8,7 +8,6 @@ import time
 from logging import Logger
 from pathlib import Path
 from typing import Any, Dict
-from urllib.parse import urlencode
 from datetime import datetime, timedelta
 
 import orjson
