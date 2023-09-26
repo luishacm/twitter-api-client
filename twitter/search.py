@@ -7,7 +7,7 @@ import re
 import time
 from logging import Logger
 from pathlib import Path
-from typing import List
+from typing import Any, Dict
 
 import orjson
 from httpx import AsyncClient, Client
@@ -48,25 +48,6 @@ class Search:
         self.accounts_ran_count = 0
         self.__new_session()
 
-    def __new_session(self, **kwargs) -> None:
-        account_num = self.accounts_json["account_num"]
-        for _ in range(len(self.accounts_json["accounts"]) - self.accounts_ran_count):
-            try:
-                account = self.accounts_json["accounts"][account_num]
-                client = self._validate_session(account["email"], account["username"], account["password"], account["cookies"], **kwargs)
-                cookies = client.cookies
-                if cookies != account["cookies"]:
-                    account["cookies"] = cookies
-                self.session = client
-                self.accounts_json["account_num"] = account_num + 1
-                self.accounts_ran_count += 1
-                save_account_json(self.accounts_json, self.accounts_json_path)
-                return
-            except Exception:
-                self.accounts_ran_count += 1
-                account_num += 1
-        raise AccountsEnded
-
     def run(self, queries: list[dict], limit: int = math.inf, out: str = 'data/search_results', **kwargs):
         out = Path(out)
         out.mkdir(parents=True, exist_ok=True)
@@ -97,6 +78,7 @@ class Search:
                 params['variables']['cursor'] = cursor
             data, entries, cursor = await self.backoff(lambda: self.get(self.client, params), **kwargs)
             if data is None:
+                print("Starting new session")
                 self.__new_session()
                 self.client = AsyncClient(headers=get_headers(self.session))
                 continue
@@ -141,10 +123,29 @@ class Search:
             except Exception as e:
                 if i == retries:
                     self.logger.debug(f'Max retries exceeded\n{e}')
-                    return
+                    return None, None, None
                 t = 2 ** i + random.random()
                 self.logger.debug(f'Retrying in {f"{t:.2f}"} seconds\t\t{e}')
                 await asyncio.sleep(t)
+
+    def __handle_cookies(self, client: Client, account: Dict[str, Any]) -> None:
+        cookies_dict = dict(client.cookies)
+        if cookies_dict != account["cookies"]:
+            account["cookies"] = cookies_dict
+
+    def __new_session(self, **kwargs) -> None:
+        for i in range(self.accounts_ran_count, len(self.accounts_json["accounts"])): 
+            try:
+                account = self.accounts_json["accounts"][i]
+                client = self._validate_session(account["email"], account["username"], account["password"], account["cookies"], **kwargs)
+                self.__handle_cookies(client, account)
+                self.session = client
+                self.accounts_ran_count += 1
+                save_account_json(self.accounts_json, self.accounts_json_path)
+                return
+            except Exception:
+                self.accounts_ran_count += 1
+        raise AccountsEnded
 
     def _init_logger(self, **kwargs) -> Logger:
         if kwargs.get('debug'):
