@@ -7,13 +7,14 @@ import re
 import time
 from logging import Logger
 from pathlib import Path
+from typing import List
 
 import orjson
 from httpx import AsyncClient, Client
 
 from .constants import *
 from .login import login
-from .util import get_headers, find_key, build_params
+from .util import get_headers, find_key, build_params, read_account_json, save_account_json, AccountsEnded
 
 reset = '\x1b[0m'
 colors = [f'\x1b[{i}m' for i in range(31, 37)]
@@ -36,11 +37,35 @@ if platform.system() != 'Windows':
 
 
 class Search:
-    def __init__(self, email: str = None, username: str = None, password: str = None, session: Client = None, **kwargs):
+    def __init__(self, accounts_json_path: str, **kwargs):
         self.save = kwargs.get('save', True)
         self.debug = kwargs.get('debug', 0)
         self.logger = self._init_logger(**kwargs)
-        self.session = self._validate_session(email, username, password, session, **kwargs)
+        self.accounts_json_path = accounts_json_path
+        self.accounts_json = read_account_json(accounts_json_path)
+        self.session = None
+        self.client = None
+        self.accounts_ran_count = 0
+        self.__new_session()
+
+    def __new_session(self, **kwargs) -> None:
+        account_num = self.accounts_json["account_num"]
+        for _ in range(len(self.accounts_json["accounts"]) - self.accounts_ran_count):
+            try:
+                account = self.accounts_json["accounts"][account_num]
+                client = self._validate_session(account["email"], account["username"], account["password"], account["cookies"], **kwargs)
+                cookies = client.cookies
+                if cookies != account["cookies"]:
+                    account["cookies"] = cookies
+                self.session = client
+                self.accounts_json["account_num"] = account_num + 1
+                self.accounts_ran_count += 1
+                save_account_json(self.accounts_json, self.accounts_json_path)
+                return
+            except Exception:
+                self.accounts_ran_count += 1
+                account_num += 1
+        raise AccountsEnded
 
     def run(self, queries: list[dict], limit: int = math.inf, out: str = 'data/search_results', **kwargs):
         out = Path(out)
@@ -49,9 +74,10 @@ class Search:
 
     async def process(self, queries: list[dict], limit: int, out: Path, **kwargs) -> list:
         async with AsyncClient(headers=get_headers(self.session)) as s:
-            return await asyncio.gather(*(self.paginate(s, q, limit, out, **kwargs) for q in queries))
+            self.client = s
+            return await asyncio.gather(*(self.paginate(q, limit, out, **kwargs) for q in queries))
 
-    async def paginate(self, client: AsyncClient, query: dict, limit: int, out: Path, **kwargs) -> list[dict]:
+    async def paginate(self, query: dict, limit: int, out: Path, **kwargs) -> list[dict]:
         params = {
             'variables': {
                 'count': 20,
@@ -69,9 +95,14 @@ class Search:
         while True:
             if cursor:
                 params['variables']['cursor'] = cursor
-            data, entries, cursor = await self.backoff(lambda: self.get(client, params), **kwargs)
+            data, entries, cursor = await self.backoff(lambda: self.get(self.client, params), **kwargs)
+            if data is None:
+                self.__new_session()
+                self.client = AsyncClient(headers=get_headers(self.session))
+                continue
+
             res.extend(entries)
-            if len(entries) <= 2 or len(total) >= limit:  # just cursors
+            if len(entries) <= 2 or len(total) >= limit:
                 self.debug and self.logger.debug(
                     f'[{GREEN}success{RESET}] Returned {len(total)} search results for {query["query"]}')
                 return res
@@ -131,31 +162,28 @@ class Search:
             return logging.getLogger(logger_name)
 
     @staticmethod
-    def _validate_session(*args, **kwargs):
-        email, username, password, session = args
+    def _validate_session(*args, **kwargs) -> Client:
+        email, username, password, cookies = args
 
-        # validate credentials
-        if all((email, username, password)):
-            return login(email, username, password, **kwargs)
+        try:
+            if isinstance(cookies, dict) and all(cookies.get(c) for c in {'ct0', 'auth_token'}):
+                _session = Client(cookies=cookies, follow_redirects=True)
+                _session.headers.update(get_headers(_session))
+                return _session
+        except Exception:
+            pass
 
-        # invalid credentials, try validating session
-        if session and all(session.cookies.get(c) for c in {'ct0', 'auth_token'}):
-            return session
-
-        # invalid credentials and session
-        cookies = kwargs.get('cookies')
-
-        # try validating cookies dict
-        if isinstance(cookies, dict) and all(cookies.get(c) for c in {'ct0', 'auth_token'}):
-            _session = Client(cookies=cookies, follow_redirects=True)
-            _session.headers.update(get_headers(_session))
-            return _session
+        if cookies is None:
+            cookies = kwargs.get('cookies')
 
         # try validating cookies from file
         if isinstance(cookies, str):
             _session = Client(cookies=orjson.loads(Path(cookies).read_bytes()), follow_redirects=True)
             _session.headers.update(get_headers(_session))
             return _session
+        
+        if all((email, username, password)):
+            return login(email, username, password, **kwargs)
 
         raise Exception('Session not authenticated. '
                         'Please use an authenticated session or remove the `session` argument and try again.')

@@ -4,6 +4,8 @@ import time
 from logging import Logger
 from pathlib import Path
 from urllib.parse import urlsplit, urlencode, urlunsplit, parse_qs, quote
+import json
+from typing import Any
 
 import orjson
 from httpx import Response, Client
@@ -245,3 +247,14 @@ def get_code(cls, retries=5) -> str | None:
         t = 2 ** i + random.random()
         print(f'Retrying in {f"{t:.2f}"} seconds')
         time.sleep(t)
+
+def read_account_json(file_path: str) -> Any:
+    with open(file_path, 'r') as f:
+        return json.load(f)
+    
+def save_account_json(data: Any, file_path: str) -> None:
+    with open(file_path, 'w') as f:
+        json.dump(data, f, indent=4)
+
+class AccountsEnded(Exception):
+    pass

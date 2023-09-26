@@ -1,0 +1,17 @@
+{
+    "account_num": 0,
+    "accounts":[
+        {
+            "login": "login",
+            "password": "password",
+            "username": "username",
+            "cookies": null
+        },
+        {
+            "login": "login",
+            "password": "password",
+            "username": "username",
+            "cookies": null
+        }
+    ]
+}
