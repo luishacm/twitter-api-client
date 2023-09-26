@@ -14,7 +14,7 @@ from httpx import AsyncClient, Client
 
 from .constants import *
 from .login import login
-from .util import get_headers, find_key, build_params, read_account_json, save_account_json, AccountsEnded
+from .util import get_headers, find_key, build_params, read_account_json, save_account_json
 
 reset = '\x1b[0m'
 colors = [f'\x1b[{i}m' for i in range(31, 37)]
@@ -37,15 +37,15 @@ if platform.system() != 'Windows':
 
 
 class Search:
-    def __init__(self, accounts_json_path: str, **kwargs):
+    def __init__(self, accounts_json_path: str, accounts_ran_count: int = 0, **kwargs):
         self.save = kwargs.get('save', True)
         self.debug = kwargs.get('debug', 0)
         self.logger = self._init_logger(**kwargs)
         self.accounts_json_path = accounts_json_path
         self.accounts_json = read_account_json(accounts_json_path)
+        self.accounts_ran_count = accounts_ran_count
         self.session = None
         self.client = None
-        self.accounts_ran_count = 0
         self.__new_session()
 
     def run(self, queries: list[dict], limit: int = math.inf, out: str = 'data/search_results', **kwargs):
@@ -79,15 +79,21 @@ class Search:
             data, entries, cursor = await self.backoff(lambda: self.get(self.client, params), **kwargs)
             if data is None:
                 print("Starting new session")
-                self.__new_session()
-                self.client = AsyncClient(headers=get_headers(self.session))
-                continue
-
+                opened_session = self.__new_session()
+                if opened_session is True:
+                    self.client = AsyncClient(headers=get_headers(self.session))
+                    continue
+                else:
+                    self.debug and self.logger.debug(
+                        f'[{RED}accounts ended{RESET}] Returned {len(total)} search results for {query["query"]}')
+                    return res
+                    
             res.extend(entries)
             if len(entries) <= 2 or len(total) >= limit:
                 self.debug and self.logger.debug(
                     f'[{GREEN}success{RESET}] Returned {len(total)} search results for {query["query"]}')
                 return res
+            
             total |= set(find_key(entries, 'entryId'))
             self.debug and self.logger.debug(f'{query["query"]}')
             self.save and (out / f'{time.time_ns()}.json').write_bytes(orjson.dumps(entries))
@@ -142,10 +148,10 @@ class Search:
                 self.session = client
                 self.accounts_ran_count += 1
                 save_account_json(self.accounts_json, self.accounts_json_path)
-                return
+                return True
             except Exception:
                 self.accounts_ran_count += 1
-        raise AccountsEnded
+        return False
 
     def _init_logger(self, **kwargs) -> Logger:
         if kwargs.get('debug'):

@@ -255,6 +255,3 @@ def read_account_json(file_path: str) -> Any:
 def save_account_json(data: Any, file_path: str) -> None:
     with open(file_path, 'w') as f:
         json.dump(data, f, indent=4)
-
-class AccountsEnded(Exception):
-    pass
