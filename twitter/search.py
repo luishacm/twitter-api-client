@@ -8,6 +8,8 @@ import time
 from logging import Logger
 from pathlib import Path
 from typing import Any, Dict
+from urllib.parse import urlencode
+from datetime import datetime, timedelta
 
 import orjson
 from httpx import AsyncClient, Client
@@ -37,15 +39,24 @@ if platform.system() != 'Windows':
 
 
 class Search:
-    def __init__(self, accounts_json_path: str, accounts_ran_count: int = 0, **kwargs):
+    def __init__(self, 
+                 accounts_json_path: str,
+                 collection_limit_per_account:int = 500,
+                 hours_to_reset_collection: int = 12,
+                 **kwargs
+                 ):
+        
         self.save = kwargs.get('save', True)
         self.debug = kwargs.get('debug', 0)
         self.logger = self._init_logger(**kwargs)
         self.accounts_json_path = accounts_json_path
         self.accounts_json = read_account_json(accounts_json_path)
-        self.accounts_ran_count = accounts_ran_count
+        self.collection_limit_per_account = collection_limit_per_account
+        self.hours_to_reset_collection = hours_to_reset_collection
         self.session = None
         self.client = None
+        self.current_account = None
+        self.total_collected_until_now = 0
         self.__new_session()
 
     def run(self, queries: list[dict], limit: int = math.inf, out: str = 'data/search_results', **kwargs):
@@ -77,21 +88,35 @@ class Search:
             if cursor:
                 params['variables']['cursor'] = cursor
             data, entries, cursor = await self.backoff(lambda: self.get(self.client, params), **kwargs)
-            if data is None:
+            if data is None or ((len(total) - self.total_collected_until_now) >= (self.collection_limit_per_account - self.current_account["last_collection_count"])):
                 print("Starting new session")
+                self.current_account["last_collection_count"] = self.current_account["last_collection_count"] + (len(total)- self.total_collected_until_now)
+                self.current_account["last_collection_date"] = datetime.now().isoformat()
+                if data is None:
+                    self.current_account["blocked"] = True
+                self.__update_accounts_json()
+                self.total_collected_until_now = len(total)
                 opened_session = self.__new_session()
                 if opened_session is True:
                     self.client = AsyncClient(headers=get_headers(self.session))
                     continue
                 else:
                     self.debug and self.logger.debug(
-                        f'[{RED}accounts ended{RESET}] Returned {len(total)} search results for {query["query"]}')
+                        f'[{RED}accounts ended{RESET}] Returned {len(total)} search results for {query["query"][:30]}...{query["query"][-30:]}')
+                    self.current_account["last_collection_count"] = self.current_account["last_collection_count"] + (len(total) - self.total_collected_until_now)
+                    self.current_account["last_collection_date"] = datetime.now().isoformat()
+                    self.current_account["blocked"] = False
+                    self.__update_accounts_json()
                     return res
                     
             res.extend(entries)
             if len(entries) <= 2 or len(total) >= limit:
                 self.debug and self.logger.debug(
-                    f'[{GREEN}success{RESET}] Returned {len(total)} search results for {query["query"]}')
+                    f'[{GREEN}success{RESET}] Returned {len(total)} search results for {query["query"][:30]}...{query["query"][-30:]}')
+                self.current_account["last_collection_count"] = self.current_account["last_collection_count"] + (len(total) - self.total_collected_until_now)
+                self.current_account["last_collection_date"] = datetime.now().isoformat()
+                self.current_account["blocked"] = False
+                self.__update_accounts_json()
                 return res
             
             total |= set(find_key(entries, 'entryId'))
@@ -139,18 +164,62 @@ class Search:
         if cookies_dict != account["cookies"]:
             account["cookies"] = cookies_dict
 
+    def __update_accounts_json(self):
+        if self.current_account is None:
+            return
+        
+        for account in self.accounts_json["accounts"]:
+            if account["email"] == self.current_account["email"]:
+                account = self.current_account
+                save_account_json(self.accounts_json, self.accounts_json_path)
+                return
+            
+    def __get_accounts_to_use(self) -> None:
+        accounts_to_use = []
+        for account in self.accounts_json["accounts"]:
+            if account["last_collection_date"] is None:
+                account["last_collection_count"] = 0
+                account["blocked"] = False
+                accounts_to_use.append(account)
+                continue
+            
+            if account["blocked"] is True:
+                last_collection_date = datetime.fromisoformat(account["last_collection_date"])
+                if datetime.now() - last_collection_date >= timedelta(hours=self.hours_to_reset_collection):
+                    account["last_collection_count"] = 0
+                    account["blocked"] = False
+                    accounts_to_use.append(account)
+                    continue
+                else:
+                    continue
+
+            if account["last_collection_count"] >= self.collection_limit_per_account:
+                last_collection_date = datetime.fromisoformat(account["last_collection_date"])
+                if datetime.now() - last_collection_date >= timedelta(hours=self.hours_to_reset_collection):
+                    account["last_collection_count"] = 0
+                    accounts_to_use.append(account)
+                    continue
+                else:
+                    continue
+
+            accounts_to_use.append(account)
+        
+        save_account_json(self.accounts_json, self.accounts_json_path)
+        return accounts_to_use
+
     def __new_session(self, **kwargs) -> None:
-        for i in range(self.accounts_ran_count, len(self.accounts_json["accounts"])): 
+        accounts_to_use = self.__get_accounts_to_use()
+        for account in accounts_to_use:
             try:
-                account = self.accounts_json["accounts"][i]
                 client = self._validate_session(account["email"], account["username"], account["password"], account["cookies"], **kwargs)
                 self.__handle_cookies(client, account)
                 self.session = client
-                self.accounts_ran_count += 1
+                self.current_account = account
                 save_account_json(self.accounts_json, self.accounts_json_path)
                 return True
             except Exception:
-                self.accounts_ran_count += 1
+                continue
+
         return False
 
     def _init_logger(self, **kwargs) -> Logger:
