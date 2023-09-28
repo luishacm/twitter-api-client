@@ -313,7 +313,7 @@ class Search:
             'post_possibly_sensitive', 'post_in_reply_to_screen_name',
             'post_in_reply_to_status_id', 'post_in_reply_to_user_id',
             'post_is_quote_status', 'post_quoted_status_id', 'post_user_mentions',
-            'post_hashtags', 'post_media', 'post_location', 'post_source'
+            'post_hashtags', 'post_media', 'post_location', 'post_source', 'post_url'
         ]]
         return df
 
