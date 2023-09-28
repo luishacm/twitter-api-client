@@ -7,8 +7,9 @@ import re
 import time
 from logging import Logger
 from pathlib import Path
-from typing import Any, Dict
+from typing import Any, List, Dict
 from datetime import datetime, timedelta
+import pandas as pd
 
 import orjson
 from httpx import AsyncClient, Client
@@ -38,30 +39,88 @@ if platform.system() != 'Windows':
 
 
 class Search:
-    def __init__(self, 
+    def __init__(self,
                  accounts_json_path: str,
-                 collection_limit_per_account:int = 500,
+                 collection_limit_per_account: int = 500,
                  hours_to_reset_collection: int = 12,
-                 **kwargs
-                 ):
+                 **kwargs: dict) -> None:
+        """
+        Initializes the Search class.
         
-        self.save = kwargs.get('save', True)
-        self.debug = kwargs.get('debug', 0)
-        self.logger = self._init_logger(**kwargs)
+        Parameters:
+        - accounts_json_path (str): The path to the accounts JSON file.
+        - collection_limit_per_account (int): The maximum number of collections per account. Default is 500.
+        - hours_to_reset_collection (int): The number of hours to reset the collection limit. Default is 12.
+        - save (bool): Whether to save the data or not. Default is False.
+        - debug (bool): Whether to show debugging logs or not. Default is False.
+        - **kwargs (dict): Additional keyword arguments.
+        """
+        
         self.accounts_json_path = accounts_json_path
         self.accounts_json = read_account_json(accounts_json_path)
         self.collection_limit_per_account = collection_limit_per_account
         self.hours_to_reset_collection = hours_to_reset_collection
+        self.save = kwargs.get('save', False)
+        self.debug = kwargs.get('debug', False)
+        self.logger = self._init_logger(**kwargs)
         self.session = None
         self.client = None
         self.current_account = None
+        self.results = None
         self.total_collected_until_now = 0
-        self.__new_session()
+        self.__new_session(**kwargs)
 
-    def run(self, queries: list[dict], limit: int = math.inf, out: str = 'data/search_results', **kwargs):
+    def run(self, queries: List[Dict], limit: int = math.inf, out: str = 'data/search_results', **kwargs: dict) -> List:
+        """
+        Executes the search based on the queries provided.
+        
+        Parameters:
+        - queries (List[Dict]): A list of query dictionaries to be processed.
+        - limit (int): The maximum number of results to retrieve. Default is infinity.
+        - out (str): The output directory where search results should be saved. Default is 'data/search_results'.
+        - **kwargs (dict): Additional keyword arguments.
+        
+        Returns:
+        List: The list containing the search results.
+        """
         out = Path(out)
         out.mkdir(parents=True, exist_ok=True)
-        return asyncio.run(self.process(queries, limit, out, **kwargs))
+        results = asyncio.run(self.process(queries, limit, out, **kwargs))
+        self.results = results
+        return results
+    
+    def get_tweets_dataframe(self) -> pd.DataFrame:
+        """
+        Converts the collected tweets into a DataFrame.
+        
+        Returns:
+        pd.DataFrame: A DataFrame containing the tweets' information.
+        """
+        tweets = [y for x in self.results for y in x if not y.get('entryId').startswith('promoted')]
+
+        tweets_list = []
+        for tweet in tweets:
+            try:
+                tweet_info = find_key(tweet, 'tweet_results')[0]["result"]["legacy"]
+            except Exception:
+                tweet_info = find_key(tweet, 'tweet_results')[0]["result"]["tweet"]["legacy"]
+            user_info = find_key(tweet, 'user_results')[0]["result"]["legacy"]
+            user_info = {f"user_{k}": v for k, v in user_info.items()}
+            combined_dict = {**tweet_info, **user_info}
+            try:
+                combined_dict["post_source"] = find_key(tweet, 'tweet_results')[0]["result"]["source"]
+            except Exception:
+                combined_dict["post_source"] = None
+
+            tweets_list.append(combined_dict)
+        
+        df = pd.DataFrame(tweets_list)
+        df["created_at"] = pd.to_datetime(df['created_at'], format="%a %b %d %H:%M:%S %z %Y")
+        df.sort_values('created_at', ascending=False, inplace=True)
+        df.dropna(subset='user_id_str', inplace=True)
+        df.reset_index(drop=True, inplace=True)
+        df = self.__organize_dataframe(df)
+        return df
 
     async def process(self, queries: list[dict], limit: int, out: Path, **kwargs) -> list:
         async with AsyncClient(headers=get_headers(self.session)) as s:
@@ -100,7 +159,8 @@ class Search:
                     self.client = AsyncClient(headers=get_headers(self.session))
                     continue
                 else:
-                    self.debug and self.logger.debug(
+                    if self.debug and self.logger:
+                        self.logger.debug(
                         f'[{RED}accounts ended{RESET}] Returned {len(total)} search results for {query["query"][:30]}...{query["query"][-30:]}')
                     self.current_account["last_collection_count"] = self.current_account["last_collection_count"] + (len(total) - self.total_collected_until_now)
                     self.current_account["last_collection_date"] = datetime.now().isoformat()
@@ -110,7 +170,8 @@ class Search:
                     
             res.extend(entries)
             if len(entries) <= 2 or len(total) >= limit:
-                self.debug and self.logger.debug(
+                if self.debug and self.logger: 
+                    self.logger.debug(
                     f'[{GREEN}success{RESET}] Returned {len(total)} search results for {query["query"][:30]}...{query["query"][-30:]}')
                 self.current_account["last_collection_count"] = self.current_account["last_collection_count"] + (len(total) - self.total_collected_until_now)
                 self.current_account["last_collection_date"] = datetime.now().isoformat()
@@ -119,7 +180,8 @@ class Search:
                 return res
             
             total |= set(find_key(entries, 'entryId'))
-            self.debug and self.logger.debug(f'{query["query"]}')
+            if self.debug and self.logger:
+                self.logger.debug(f'{query["query"]}')
             self.save and (out / f'{time.time_ns()}.json').write_bytes(orjson.dumps(entries))
 
     async def get(self, client: AsyncClient, params: dict) -> tuple:
@@ -157,6 +219,103 @@ class Search:
                 t = 2 ** i + random.random()
                 self.logger.debug(f'Retrying in {f"{t:.2f}"} seconds\t\t{e}')
                 await asyncio.sleep(t)
+
+    def __organize_dataframe(self, df: pd.DataFrame) -> pd.DataFrame:
+        """
+        Organize the DataFrame by renaming columns and extracting nested information
+
+        Parameters:
+        ----------
+        df : pd.DataFrame
+            The original DataFrame containing tweet information.
+
+        Returns:
+        -------
+        pd.DataFrame
+            The organized DataFrame with renamed columns and additional extracted information.
+        """
+
+        numeric = [
+            'bookmark_count',
+            'favorite_count',
+            'quote_count',
+            'reply_count',
+            'retweet_count',
+        ]
+        df[numeric] = df[numeric].apply(pd.to_numeric, errors='coerce')        
+        df['created_at'] = df['created_at'].dt.tz_convert(None).dt.strftime("%Y-%m-%d %H:%M:%S 00:00") 
+
+        df.rename(columns={
+            'user_id_str': 'author_id',
+            'user_screen_name': 'author_username',
+            'user_name': 'author_name',
+            'user_description': 'author_description',
+            'user_profile_image_url_https': 'author_profile_url',
+            'user_followers_count': 'author_engagement_followers_count',
+            'user_friends_count': 'author_engagement_friends_count',
+            'user_favourites_count': 'author_engagement_likes_count',
+            'user_listed_count': 'author_listed_count',
+            'user_statuses_count': 'author_posts_count',
+            'lang': 'author_language',
+            'user_location': 'author_location',
+            'id_str': 'post_id',
+            'full_text': 'post_text',
+            'created_at': 'post_posted_at',
+            'favorite_count': 'post_engagement_likes_count',
+            'quote_count': 'post_engagement_quote_count',
+            'reply_count': 'post_engagement_reply_count',
+            'retweet_count': 'post_engagement_retweet_count',
+            'retweeted': 'post_retweeted',
+            'possibly_sensitive': 'post_possibly_sensitive',
+            'in_reply_to_screen_name': 'post_in_reply_to_screen_name',
+            'in_reply_to_status_id_str': 'post_in_reply_to_status_id',
+            'in_reply_to_user_id_str': 'post_in_reply_to_user_id',
+            'is_quote_status': 'post_is_quote_status',
+            'quoted_status_id_str': 'post_quoted_status_id'
+        }, inplace=True)
+        
+        if 'entities' in df.columns:
+            df['post_user_mentions'] = df['entities'].apply(lambda x: [i.get('screen_name', None) for i in x.get('user_mentions', [])] if isinstance(x, dict) else None)
+            df['post_hashtags'] = df['entities'].apply(lambda x: [i.get('text', None) for i in x.get('hashtags', [])] if isinstance(x, dict) else None)
+            df['post_url'] = df['entities'].apply(lambda x: [i.get('expanded_url', None) for i in x.get('urls', [])] if isinstance(x, dict) else None)
+        else:
+            df['post_user_mentions'] = None
+            df['post_hashtags'] = None
+            df['post_url'] = None
+
+        if 'place' in df.columns:
+            df['post_location'] = df['place'].apply(lambda x: x.get('full_name', None) if isinstance(x, dict) else None)
+        else:
+            df['post_location'] = None
+
+        if 'extended_entities' in df.columns:
+            df['post_media'] = df['extended_entities'].apply(lambda x:
+                                                             [{'display_url': media.get('expanded_url', ''),
+                                                               'media_key': media.get('media_key', ''),
+                                                               'type': media.get('type', '')}
+                                                               for media in x.get('media', [])]
+                                                               if isinstance(x, dict) else None
+                                                               )
+        else:
+            df['post_media'] = None
+
+        df['author_timezone'] = None
+
+        df = df[[
+            'author_id', 'author_username', 'author_name', 'author_description',
+            'author_profile_url', 'author_engagement_followers_count',
+            'author_engagement_friends_count', 'author_engagement_likes_count',
+            'author_listed_count', 'author_posts_count', 'author_language',
+            'author_location', 'author_timezone',
+            'post_id', 'post_text', 'post_posted_at', 'post_engagement_likes_count',
+            'post_engagement_quote_count', 'post_engagement_reply_count',
+            'post_engagement_retweet_count', 'post_retweeted',
+            'post_possibly_sensitive', 'post_in_reply_to_screen_name',
+            'post_in_reply_to_status_id', 'post_in_reply_to_user_id',
+            'post_is_quote_status', 'post_quoted_status_id', 'post_user_mentions',
+            'post_hashtags', 'post_media', 'post_location', 'post_source'
+        ]]
+        return df
 
     def __handle_cookies(self, client: Client, account: Dict[str, Any]) -> None:
         cookies_dict = dict(client.cookies)

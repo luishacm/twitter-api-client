@@ -9,6 +9,7 @@ install_requires = [
     "httpx",
     "tqdm",
     "orjson",
+    "pandas",
     "openpyxl",
     'uvloop; platform_system != "Windows"',
 ]
