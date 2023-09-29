@@ -5,7 +5,7 @@ from logging import Logger
 from pathlib import Path
 from urllib.parse import urlsplit, urlencode, urlunsplit, parse_qs, quote
 import json
-from typing import Any
+from typing import Any, Dict
 
 import orjson
 from httpx import Response, Client
@@ -255,3 +255,8 @@ def read_account_json(file_path: str) -> Any:
 def save_account_json(data: Any, file_path: str) -> None:
     with open(file_path, 'w') as f:
         json.dump(data, f, indent=4)
+
+def ensure_keys_exist(d: Dict[str, Any], keys_to_ensure: Dict) -> Dict[str, Any]:
+    for key in keys_to_ensure:
+        d.setdefault(key, None)
+    return d

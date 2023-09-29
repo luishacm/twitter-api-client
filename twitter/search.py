@@ -16,7 +16,7 @@ from httpx import AsyncClient, Client
 
 from .constants import *
 from .login import login
-from .util import get_headers, find_key, build_params, read_account_json, save_account_json
+from .util import get_headers, find_key, build_params, read_account_json, save_account_json, ensure_keys_exist
 
 reset = '\x1b[0m'
 colors = [f'\x1b[{i}m' for i in range(31, 37)]
@@ -39,10 +39,19 @@ if platform.system() != 'Windows':
 
 
 class Search:
+    keys_to_ensure = [
+        "last_collection_date",
+        "last_collection_count",
+        "blocked",
+        "cookies",
+        "proxy"
+        ] 
+    
     def __init__(self,
                  accounts_json_path: str,
                  collection_limit_per_account: int = 500,
                  hours_to_reset_collection: int = 12,
+                 proxy_credentials: Dict = None,
                  **kwargs: dict) -> None:
         """
         Initializes the Search class.
@@ -51,6 +60,7 @@ class Search:
         - accounts_json_path (str): The path to the accounts JSON file.
         - collection_limit_per_account (int): The maximum number of collections per account. Default is 500.
         - hours_to_reset_collection (int): The number of hours to reset the collection limit. Default is 12.
+        - proxy_credentials (Dict): {"username": username, "password": password, "bearer_token": bearer_token} for IPRoyal account.
         - save (bool): Whether to save the data or not. Default is False.
         - debug (bool): Whether to show debugging logs or not. Default is False.
         - **kwargs (dict): Additional keyword arguments.
@@ -68,6 +78,7 @@ class Search:
         self.current_account = None
         self.results = None
         self.total_collected_until_now = 0
+        self.proxy_credentials = proxy_credentials
         self.__new_session(**kwargs)
 
     def run(self, queries: List[Dict], limit: int = math.inf, out: str = 'data/search_results', **kwargs: dict) -> List:
@@ -123,7 +134,7 @@ class Search:
         return df
 
     async def process(self, queries: list[dict], limit: int, out: Path, **kwargs) -> list:
-        async with AsyncClient(headers=get_headers(self.session)) as s:
+        async with AsyncClient(headers=get_headers(self.session), proxies=self.current_account["proxy"]) as s:
             self.client = s
             return await asyncio.gather(*(self.paginate(q, limit, out, **kwargs) for q in queries))
 
@@ -156,7 +167,7 @@ class Search:
                 self.total_collected_until_now = len(total)
                 opened_session = self.__new_session()
                 if opened_session is True:
-                    self.client = AsyncClient(headers=get_headers(self.session))
+                    self.client = AsyncClient(headers=get_headers(self.session), proxies=self.current_account["proxy"])
                     continue
                 else:
                     if self.debug and self.logger:
@@ -187,10 +198,11 @@ class Search:
     async def get(self, client: AsyncClient, params: dict) -> tuple:
         _, qid, name = Operation.SearchTimeline
         r = await client.get(f'https://twitter.com/i/api/graphql/{qid}/{name}', params=build_params(params))
+        response = await client.get("http://ipinfo.io/ip")
+        print("IP with Proxy:", response.text)
         data = r.json()
         cursor = self.get_cursor(data)
         entries = [y for x in find_key(data, 'entries') for y in x if re.search(r'^(tweet|user)-', y['entryId'])]
-        # add on query info
         for e in entries:
             e['query'] = params['variables']['rawQuery']
         return data, entries, cursor
@@ -215,7 +227,8 @@ class Search:
                     return data, entries, cursor
             except Exception as e:
                 if i == retries:
-                    self.logger.debug(f'Max retries exceeded\n{e}')
+                    if self.debug and self.logger:
+                        self.logger.debug(f'Max retries exceeded\n{e}')
                     return None, None, None
                 t = 2 ** i + random.random()
                 if self.debug and self.logger:
@@ -244,9 +257,8 @@ class Search:
             'reply_count',
             'retweet_count',
         ]
-        df[numeric] = df[numeric].apply(pd.to_numeric, errors='coerce')        
-        df['created_at'] = df['created_at'].dt.tz_convert(None).dt.strftime("%Y-%m-%d %H:%M:%S 00:00") 
-
+        df[numeric] = df[numeric].apply(pd.to_numeric, errors='coerce')
+        df['created_at'] = df['created_at'].dt.tz_convert(None).dt.strftime("%Y-%m-%d %H:%M:%S 00:00")
         df.rename(columns={
             'user_id_str': 'author_id',
             'user_screen_name': 'author_username',
@@ -260,6 +272,7 @@ class Search:
             'user_statuses_count': 'author_posts_count',
             'lang': 'author_language',
             'user_location': 'author_location',
+            'user_verified': 'author_verified',
             'id_str': 'post_id',
             'full_text': 'post_text',
             'created_at': 'post_posted_at',
@@ -279,11 +292,11 @@ class Search:
         if 'entities' in df.columns:
             df['post_user_mentions'] = df['entities'].apply(lambda x: [i.get('screen_name', None) for i in x.get('user_mentions', [])] if isinstance(x, dict) else None)
             df['post_hashtags'] = df['entities'].apply(lambda x: [i.get('text', None) for i in x.get('hashtags', [])] if isinstance(x, dict) else None)
-            df['post_url'] = df['entities'].apply(lambda x: [i.get('expanded_url', None) for i in x.get('urls', [])] if isinstance(x, dict) else None)
+            df['post_urls'] = df['entities'].apply(lambda x: [i.get('expanded_url', None) for i in x.get('urls', [])] if isinstance(x, dict) else None)
         else:
             df['post_user_mentions'] = None
             df['post_hashtags'] = None
-            df['post_url'] = None
+            df['post_urls'] = None
 
         if 'place' in df.columns:
             df['post_location'] = df['place'].apply(lambda x: x.get('full_name', None) if isinstance(x, dict) else None)
@@ -309,14 +322,14 @@ class Search:
             'author_profile_url', 'author_engagement_followers_count',
             'author_engagement_friends_count', 'author_engagement_likes_count',
             'author_listed_count', 'author_posts_count', 'author_language',
-            'author_location', 'author_timezone',
+            'author_location', 'author_timezone', 'author_verified',
             'post_id', 'post_text', 'post_posted_at', 'post_engagement_likes_count',
             'post_engagement_quote_count', 'post_engagement_reply_count',
             'post_engagement_retweet_count', 'post_retweeted',
             'post_possibly_sensitive', 'post_in_reply_to_screen_name',
             'post_in_reply_to_status_id', 'post_in_reply_to_user_id',
             'post_is_quote_status', 'post_quoted_status_id', 'post_user_mentions',
-            'post_hashtags', 'post_media', 'post_language', 'post_location', 'post_source', 'post_url'
+            'post_hashtags', 'post_media', 'post_language', 'post_location', 'post_source', 'post_urls'
         ]
 
         for col in column_order:
@@ -324,7 +337,7 @@ class Search:
                 df[col] = None
         
         df = df[column_order]
-        df = df.applymap(lambda x: None if isinstance(x, list) and not x else x)        
+        df = df.applymap(lambda x: None if isinstance(x, list) and not x else x)
         return df
 
     def __handle_cookies(self, client: Client, account: Dict[str, Any]) -> None:
@@ -345,9 +358,11 @@ class Search:
     def __get_accounts_to_use(self) -> None:
         accounts_to_use = []
         for account in self.accounts_json["accounts"]:
+            account = ensure_keys_exist(account, self.keys_to_ensure)
             if account["last_collection_date"] is None:
                 account["last_collection_count"] = 0
                 account["blocked"] = False
+                account["proxy"] = self.__get_new_proxy()
                 accounts_to_use.append(account)
                 continue
             
@@ -356,6 +371,7 @@ class Search:
                 if datetime.now() - last_collection_date >= timedelta(hours=self.hours_to_reset_collection):
                     account["last_collection_count"] = 0
                     account["blocked"] = False
+                    account["proxy"] = self.__get_new_proxy()
                     accounts_to_use.append(account)
                     continue
                 else:
@@ -365,11 +381,13 @@ class Search:
                 last_collection_date = datetime.fromisoformat(account["last_collection_date"])
                 if datetime.now() - last_collection_date >= timedelta(hours=self.hours_to_reset_collection):
                     account["last_collection_count"] = 0
+                    account["proxy"] = self.__get_new_proxy()
                     accounts_to_use.append(account)
                     continue
                 else:
                     continue
-
+            
+            account["proxy"] = self.__get_new_proxy()
             accounts_to_use.append(account)
         
         save_account_json(self.accounts_json, self.accounts_json_path)
@@ -379,7 +397,7 @@ class Search:
         accounts_to_use = self.__get_accounts_to_use()
         for account in accounts_to_use:
             try:
-                client = self._validate_session(account["email"], account["username"], account["password"], account["cookies"], **kwargs)
+                client = self._validate_session(account["email"], account["username"], account["password"], account["cookies"], account["proxy"], **kwargs)
                 self.__handle_cookies(client, account)
                 self.session = client
                 self.current_account = account
@@ -387,8 +405,45 @@ class Search:
                 return True
             except Exception:
                 continue
-
         return False
+    
+    def __get_new_proxy(self):
+        proxy_string = self.__get_new_proxy_ip()
+        parts = proxy_string.split(":")
+        host = parts[0]
+        port = parts[1]
+        credentials_and_params = ":".join(parts[2:])
+        proxy_url = f"http://{credentials_and_params}@{host}:{port}"
+        proxy= {
+            "http://": proxy_url,
+            "https://": proxy_url,
+            }
+        return proxy
+                
+    def __get_new_proxy_ip(self):
+        url = "https://dashboard.iproyal.com/api/residential/royal/reseller/access/generate-proxy-list"
+    
+        headers = {
+            "X-Access-Token": f"Bearer {self.proxy_credentials['bearer_token']}",
+            "Content-Type": "application/json",
+        }
+
+        data = {
+            "username": self.proxy_credentials["username"],
+            "password": self.proxy_credentials["password"],
+            "proxyCount": 1,
+            "rotation": "sticky",
+            "location": "_country-br_city-saopaulo",
+            "lifetime": "5m",
+            "highEndPool": True, 
+            "skipIspStatic": True
+        }
+
+        with Client() as client:
+            response = client.post(url, json=data, headers=headers)
+
+        return response.json()[0]
+
 
     def _init_logger(self, **kwargs) -> Logger:
         if kwargs.get('debug'):
@@ -407,11 +462,11 @@ class Search:
 
     @staticmethod
     def _validate_session(*args, **kwargs) -> Client:
-        email, username, password, cookies = args
+        email, username, password, cookies, proxies = args
 
         try:
             if isinstance(cookies, dict) and all(cookies.get(c) for c in {'ct0', 'auth_token'}):
-                _session = Client(cookies=cookies, follow_redirects=True)
+                _session = Client(cookies=cookies, follow_redirects=True, proxies=proxies)
                 _session.headers.update(get_headers(_session))
                 return _session
         except Exception:
@@ -422,7 +477,7 @@ class Search:
 
         # try validating cookies from file
         if isinstance(cookies, str):
-            _session = Client(cookies=orjson.loads(Path(cookies).read_bytes()), follow_redirects=True)
+            _session = Client(cookies=orjson.loads(Path(cookies).read_bytes(), proxies=proxies), follow_redirects=True)
             _session.headers.update(get_headers(_session))
             return _session
         
