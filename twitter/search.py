@@ -207,7 +207,8 @@ class Search:
                 data, entries, cursor = await fn()
                 if errors := data.get('errors'):
                     for e in errors:
-                        self.logger.warning(f'{YELLOW}{e.get("message")}{RESET}')
+                        if self.debug and self.logger:
+                            self.logger.warning(f'{YELLOW}{e.get("message")}{RESET}')
                         return [], [], ''
                 ids = set(find_key(data, 'entryId'))
                 if len(ids) >= 2:
@@ -217,7 +218,8 @@ class Search:
                     self.logger.debug(f'Max retries exceeded\n{e}')
                     return None, None, None
                 t = 2 ** i + random.random()
-                self.logger.debug(f'Retrying in {f"{t:.2f}"} seconds\t\t{e}')
+                if self.debug and self.logger:
+                    self.logger.debug(f'Retrying in {f"{t:.2f}"} seconds\t\t{e}')
                 await asyncio.sleep(t)
 
     def __organize_dataframe(self, df: pd.DataFrame) -> pd.DataFrame:
@@ -301,7 +303,7 @@ class Search:
 
         df['author_timezone'] = None
 
-        df = df[[
+        column_order = [
             'author_id', 'author_username', 'author_name', 'author_description',
             'author_profile_url', 'author_engagement_followers_count',
             'author_engagement_friends_count', 'author_engagement_likes_count',
@@ -314,7 +316,14 @@ class Search:
             'post_in_reply_to_status_id', 'post_in_reply_to_user_id',
             'post_is_quote_status', 'post_quoted_status_id', 'post_user_mentions',
             'post_hashtags', 'post_media', 'post_location', 'post_source', 'post_url'
-        ]]
+        ]
+
+        for col in column_order:
+            if col not in df.columns:
+                df[col] = None
+        
+        df = df[column_order]
+        df = df.applymap(lambda x: None if isinstance(x, list) and not x else x)        
         return df
 
     def __handle_cookies(self, client: Client, account: Dict[str, Any]) -> None:
