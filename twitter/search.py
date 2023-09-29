@@ -302,6 +302,7 @@ class Search:
             df['post_media'] = None
 
         df['author_timezone'] = None
+        df["post_language"] = df["author_language"]
 
         column_order = [
             'author_id', 'author_username', 'author_name', 'author_description',
@@ -315,7 +316,7 @@ class Search:
             'post_possibly_sensitive', 'post_in_reply_to_screen_name',
             'post_in_reply_to_status_id', 'post_in_reply_to_user_id',
             'post_is_quote_status', 'post_quoted_status_id', 'post_user_mentions',
-            'post_hashtags', 'post_media', 'post_location', 'post_source', 'post_url'
+            'post_hashtags', 'post_media', 'post_language', 'post_location', 'post_source', 'post_url'
         ]
 
         for col in column_order:
