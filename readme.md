@@ -105,7 +105,6 @@ This list contains the keys that each account in the JSON will have:
     cookies #The data of the cookies, to reuse it and not create a new session everytime you use the account.
     proxy #The proxy data already formatted correctly.
 
-```
 
 **Search Operators Reference**
 
