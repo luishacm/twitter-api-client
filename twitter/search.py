@@ -7,7 +7,7 @@ import re
 import time
 from logging import Logger
 from pathlib import Path
-from typing import Any, List, Dict
+from typing import Any, List, Dict, Optional
 from datetime import datetime, timedelta
 import pandas as pd
 
@@ -40,6 +40,7 @@ if platform.system() != 'Windows':
 
 class Search:
     keys_to_ensure = [
+        "disabled",
         "last_collection_date",
         "last_collection_count",
         "blocked",
@@ -198,8 +199,6 @@ class Search:
     async def get(self, client: AsyncClient, params: dict) -> tuple:
         _, qid, name = Operation.SearchTimeline
         r = await client.get(f'https://twitter.com/i/api/graphql/{qid}/{name}', params=build_params(params))
-        response = await client.get("http://ipinfo.io/ip")
-        print("IP with Proxy:", response.text)
         data = r.json()
         cursor = self.get_cursor(data)
         entries = [y for x in find_key(data, 'entries') for y in x if re.search(r'^(tweet|user)-', y['entryId'])]
@@ -359,6 +358,10 @@ class Search:
         accounts_to_use = []
         for account in self.accounts_json["accounts"]:
             account = ensure_keys_exist(account, self.keys_to_ensure)
+            
+            if account["disabled"] is True:
+                continue
+
             if account["last_collection_date"] is None:
                 account["last_collection_count"] = 0
                 account["blocked"] = False
@@ -407,8 +410,11 @@ class Search:
                 continue
         return False
     
-    def __get_new_proxy(self):
+    def __get_new_proxy(self) -> Optional[Dict]:
         proxy_string = self.__get_new_proxy_ip()
+        if proxy_string is None:
+            return None
+        
         parts = proxy_string.split(":")
         host = parts[0]
         port = parts[1]
@@ -420,7 +426,10 @@ class Search:
             }
         return proxy
                 
-    def __get_new_proxy_ip(self):
+    def __get_new_proxy_ip(self) -> Optional[str]:
+        if self.proxy_credentials is None:
+            return None
+        
         url = "https://dashboard.iproyal.com/api/residential/royal/reseller/access/generate-proxy-list"
     
         headers = {

@@ -3,12 +3,14 @@
         {
             "login": "login",
             "password": "password",
-            "username": "username"
+            "username": "username",
+            "disabled": false
         },
         {
             "login": "login",
             "password": "password",
-            "username": "username"
+            "username": "username",
+            "disabled": false
         }
     ]
 }
