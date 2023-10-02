@@ -211,6 +211,83 @@ account.change_password('old pwd','new pwd')
 
 ```
 
+#### Search
+
+![](assets/search.gif)
+
+**Twitter Search Class Documentation**
+
+The Search class has been updated to provide more flexible options and functionalities.
+Now you can batch search with multiple accounts and with or without proxy.
+You can chose how many tweets you wanna collect per account and how long should it take for you to reuse that same account
+You can also debug or save each request in a json on your local folder.
+```python   
+from twitter.search import Search
+import math
+
+# Initialize the Search class
+search = Search(
+    accounts_json_path="example_accounts.json",
+    collection_limit_per_account=500,
+    hours_to_reset_collection=12,
+    proxy_credentials={ #The proxy credentials are IPRoyal API credentials
+        "username": "your_username",
+        "password": "your_password",
+        "bearer_token": "your_bearer_token"
+    },
+    debug=True,
+    save=False
+)
+
+# Run a search, you can chose up to infinite, but usually you'll be able to collect up to 1000 tweets per query
+latest_results = search.run(
+    limit=10,
+    latest=True,
+    retries=3,
+    queries=[
+        {
+            'category': 'Latest',
+            'query': 'your_query_here'
+        },
+    ],
+)
+
+# Retrieve tweets as DataFrame with columns already standardized
+df = search.get_tweets_dataframe()
+```
+
+**Account JSON Format**
+
+The accounts_json_path parameter expects a JSON file in the following format:
+
+You can modify the value "disabled" to True when you wanna leave the account there but not use it
+
+```python   
+{
+    "accounts":[
+        {
+            "login": "login",
+            "password": "password",
+            "username": "username",
+            "disabled": false
+        },
+        {
+            "login": "login",
+            "password": "password",
+            "username": "username",
+            "disabled": false
+        }
+    ]
+}
+```
+
+**Search Operators Reference**
+
+https://developer.twitter.com/en/docs/twitter-api/v1/rules-and-filtering/search-operators
+
+https://developer.twitter.com/en/docs/twitter-api/tweets/search/integrate/build-a-query
+
+
 ### Scraping
 
 #### Get all user/tweet data
@@ -285,51 +362,6 @@ follower_subset, last_cursor = scraper.followers([user_id], limit=limit, cursor=
 
 # use last_cursor to resume pagination
 ```
-
-#### Search
-
-![](assets/search.gif)
-
-```python   
-from twitter.search import Search
-
-email, username, password = ..., ..., ...
-# default output directory is `data/search_results` if save=True
-search = Search(email, username, password, save=True, debug=1)
-
-res = search.run(
-    limit=37,
-    retries=5,
-    queries=[
-        {
-            'category': 'Top',
-            'query': 'paperswithcode -tensorflow -tf'
-        },
-        {
-            'category': 'Latest',
-            'query': 'test'
-        },
-        {
-            'category': 'People',
-            'query': 'brasil portugal -argentina'
-        },
-        {
-            'category': 'Photos',
-            'query': 'greece'
-        },
-        {
-            'category': 'Videos',
-            'query': 'italy'
-        },
-    ],
-)
-```
-
-**Search Operators Reference**
-
-https://developer.twitter.com/en/docs/twitter-api/v1/rules-and-filtering/search-operators
-
-https://developer.twitter.com/en/docs/twitter-api/tweets/search/integrate/build-a-query
 
 ### Spaces
 
