@@ -3,11 +3,11 @@
 ## Table of Contents
 
 * [Installation](#installation)
+* [Search](#search)
 * [Automation](#automation)
 * [Scraping](#scraping)
     * [Get all user/tweet data](#get-all-usertweet-data)
     * [Resume Pagination](#resume-pagination)
-    * [Search](#search)
 * [Spaces](#spaces)
     * [Live Audio Capture](#live-audio-capture)
     * [Live Transcript Capture](#live-transcript-capture)
@@ -20,6 +20,84 @@
 ```bash
 pip install git+https://github.com/voxradar/twitter-api-client.git
 ```
+
+
+#### Search
+
+![](assets/search.gif)
+
+**Twitter Search Class Documentation**
+
+The Search class has been updated to provide more flexible options and functionalities.
+Now you can batch search with multiple accounts and with or without proxy.
+You can chose how many tweets you wanna collect per account and how long should it take for you to reuse that same account
+You can also debug or save each request in a json on your local folder.
+
+```python   
+from twitter.search import Search
+import math
+
+# Initialize the Search class
+search = Search(
+    accounts_json_path="example_accounts.json",
+    collection_limit_per_account=500,
+    hours_to_reset_collection=12,
+    proxy_credentials={ #The proxy credentials are IPRoyal API credentials
+        "username": "your_username",
+        "password": "your_password",
+        "bearer_token": "your_bearer_token"
+    },
+    debug=True,
+    save=False
+)
+
+# Run a search, you can chose up to infinite, but usually you'll be able to collect up to 1000 tweets per query
+latest_results = search.run(
+    limit=10,
+    latest=True,
+    retries=3,
+    queries=[
+        {
+            'category': 'Latest',
+            'query': 'your_query_here'
+        },
+    ],
+)
+
+# Retrieve tweets as DataFrame with columns already standardized
+df = search.get_tweets_dataframe()
+```
+
+**Account JSON Format**
+
+The accounts_json_path parameter expects a JSON file in the following format:
+
+You can modify the value "disabled" to True when you wanna leave the account there but not use it
+
+```python   
+{
+    "accounts":[
+        {
+            "login": "login",
+            "password": "password",
+            "username": "username",
+            "disabled": false
+        },
+        {
+            "login": "login",
+            "password": "password",
+            "username": "username",
+            "disabled": false
+        }
+    ]
+}
+```
+
+**Search Operators Reference**
+
+https://developer.twitter.com/en/docs/twitter-api/v1/rules-and-filtering/search-operators
+
+https://developer.twitter.com/en/docs/twitter-api/tweets/search/integrate/build-a-query
 
 ### Automation
 
@@ -210,84 +288,6 @@ notifications = account.notifications()
 account.change_password('old pwd','new pwd')
 
 ```
-
-#### Search
-
-![](assets/search.gif)
-
-**Twitter Search Class Documentation**
-
-The Search class has been updated to provide more flexible options and functionalities.
-Now you can batch search with multiple accounts and with or without proxy.
-You can chose how many tweets you wanna collect per account and how long should it take for you to reuse that same account
-You can also debug or save each request in a json on your local folder.
-
-```python   
-from twitter.search import Search
-import math
-
-# Initialize the Search class
-search = Search(
-    accounts_json_path="example_accounts.json",
-    collection_limit_per_account=500,
-    hours_to_reset_collection=12,
-    proxy_credentials={ #The proxy credentials are IPRoyal API credentials
-        "username": "your_username",
-        "password": "your_password",
-        "bearer_token": "your_bearer_token"
-    },
-    debug=True,
-    save=False
-)
-
-# Run a search, you can chose up to infinite, but usually you'll be able to collect up to 1000 tweets per query
-latest_results = search.run(
-    limit=10,
-    latest=True,
-    retries=3,
-    queries=[
-        {
-            'category': 'Latest',
-            'query': 'your_query_here'
-        },
-    ],
-)
-
-# Retrieve tweets as DataFrame with columns already standardized
-df = search.get_tweets_dataframe()
-```
-
-**Account JSON Format**
-
-The accounts_json_path parameter expects a JSON file in the following format:
-
-You can modify the value "disabled" to True when you wanna leave the account there but not use it
-
-```python   
-{
-    "accounts":[
-        {
-            "login": "login",
-            "password": "password",
-            "username": "username",
-            "disabled": false
-        },
-        {
-            "login": "login",
-            "password": "password",
-            "username": "username",
-            "disabled": false
-        }
-    ]
-}
-```
-
-**Search Operators Reference**
-
-https://developer.twitter.com/en/docs/twitter-api/v1/rules-and-filtering/search-operators
-
-https://developer.twitter.com/en/docs/twitter-api/tweets/search/integrate/build-a-query
-
 
 ### Scraping
 
