@@ -18,7 +18,7 @@
 ### Installation
 
 ```bash
-pip install git+https://github.com/luishacm/twitter-api-client.git
+pip install git+https://github.com/voxradar/twitter-api-client.git
 ```
 
 ### Automation

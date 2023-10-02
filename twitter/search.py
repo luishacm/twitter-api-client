@@ -46,7 +46,7 @@ class Search:
         "blocked",
         "cookies",
         "proxy"
-        ] 
+        ]
     
     def __init__(self,
                  accounts_json_path: str,
