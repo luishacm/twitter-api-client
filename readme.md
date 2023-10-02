@@ -87,6 +87,7 @@ The accounts_json_path parameter expects a JSON file in the following format, th
         }
     ]
 }
+```
 
 **Account JSON Keys**
 
