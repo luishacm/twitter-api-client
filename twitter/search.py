@@ -162,7 +162,7 @@ class Search:
                 print("Starting new session")
                 self.current_account["last_collection_count"] = self.current_account["last_collection_count"] + (len(total)- self.total_collected_until_now)
                 self.current_account["last_collection_date"] = datetime.now().isoformat()
-                if data is None:
+                if data is None and entries is None:
                     self.current_account["blocked"] = True
                 self.__update_accounts_json()
                 self.total_collected_until_now = len(total)
@@ -219,7 +219,13 @@ class Search:
                 if errors := data.get('errors'):
                     for e in errors:
                         if self.debug and self.logger:
-                            self.logger.warning(f'{YELLOW}{e.get("message")}{RESET}')
+                            message = e.get("message")
+                            if "authenticate" in message:
+                                self.current_account["cookies"] = None
+                                self.__update_accounts_json()
+                                self.logger.debug(f'{YELLOW} The cookies are no longer working, reseting them {RESET}')
+                                return None, False, None
+                            self.logger.warning(f'{YELLOW}{message}{RESET}')
                         return [], [], ''
                 ids = set(find_key(data, 'entryId'))
                 if len(ids) >= 2:
