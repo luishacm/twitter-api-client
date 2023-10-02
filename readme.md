@@ -70,9 +70,7 @@ df = search.get_tweets_dataframe()
 
 **Account JSON Format**
 
-The accounts_json_path parameter expects a JSON file in the following format:
-
-You can modify the value "disabled" to True when you wanna leave the account there but not use it
+The accounts_json_path parameter expects a JSON file in the following format, the rest of the keys will be automatically created:
 
 ```python   
 {
@@ -81,16 +79,31 @@ You can modify the value "disabled" to True when you wanna leave the account the
             "login": "login",
             "password": "password",
             "username": "username",
-            "disabled": false
         },
         {
             "login": "login",
             "password": "password",
             "username": "username",
-            "disabled": false
         }
     ]
 }
+
+**Account JSON Keys**
+
+These are the keys on the Account Json File that will automatically be created when the account is used
+
+This list contains the keys that each account in the JSON will have:
+
+    login #Your twitter login
+    password #Your twitter password
+    username #Your twitter username
+    disabled #You can modify this tag to True or False. Whether you want to use this account or not. 
+    last_collection_date #date
+    last_collection_count #How much you've collected with this account in the last hours (hours_to_reset_collection)
+    blocked  #If the account is blocked when trying to use.
+    cookies #The data of the cookies, to reuse it and not create a new session everytime you use the account.
+    proxy #The proxy data already formatted correctly.
+
 ```
 
 **Search Operators Reference**
