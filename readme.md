@@ -221,6 +221,7 @@ The Search class has been updated to provide more flexible options and functiona
 Now you can batch search with multiple accounts and with or without proxy.
 You can chose how many tweets you wanna collect per account and how long should it take for you to reuse that same account
 You can also debug or save each request in a json on your local folder.
+
 ```python   
 from twitter.search import Search
 import math
