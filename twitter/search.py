@@ -7,7 +7,7 @@ import re
 import time
 from logging import Logger
 from pathlib import Path
-from typing import Any, List, Dict, Optional
+from typing import Any, List, Dict, Optional, Union
 from datetime import datetime, timedelta
 import pandas as pd
 
@@ -49,7 +49,7 @@ class Search:
         ]
     
     def __init__(self,
-                 accounts_json_path: str,
+                 twitter_accounts: Union[str, Dict],
                  collection_limit_per_account: int = 500,
                  hours_to_reset_collection: int = 12,
                  proxy_credentials: Dict = None,
@@ -58,7 +58,8 @@ class Search:
         Initializes the Search class.
         
         Parameters:
-        - accounts_json_path (str): The path to the accounts JSON file.
+        - twitter_accounts (str or Dict): You can either pass the path to the accounts JSON or a 
+          Dict {"s3": s3 client object initialized, "bucket_name": name of the s3 bucket, "file_name": str with the name of the file you want to save or read}
         - collection_limit_per_account (int): The maximum number of collections per account. Default is 500.
         - hours_to_reset_collection (int): The number of hours to reset the collection limit. Default is 12.
         - proxy_credentials (Dict): {"username": username, "password": password, "bearer_token": bearer_token} for IPRoyal account.
@@ -67,8 +68,8 @@ class Search:
         - **kwargs (dict): Additional keyword arguments.
         """
         
-        self.accounts_json_path = accounts_json_path
-        self.accounts_json = read_account_json(accounts_json_path)
+        self.twitter_accounts = twitter_accounts
+        self.accounts_json = read_account_json(twitter_accounts)
         self.collection_limit_per_account = collection_limit_per_account
         self.hours_to_reset_collection = hours_to_reset_collection
         self.save = kwargs.get('save', False)
@@ -342,7 +343,7 @@ class Search:
                 df[col] = None
         
         df = df[column_order]
-        df = df.applymap(lambda x: None if isinstance(x, list) and not x else x)
+        df = df.apply(lambda col: col.map(lambda x: None if isinstance(x, list) and not x else x))
         return df
 
     def __handle_cookies(self, client: Client, account: Dict[str, Any]) -> None:
@@ -357,7 +358,7 @@ class Search:
         for account in self.accounts_json["accounts"]:
             if account["email"] == self.current_account["email"]:
                 account = self.current_account
-                save_account_json(self.accounts_json, self.accounts_json_path)
+                save_account_json(self.accounts_json, self.twitter_accounts)
                 return
             
     def __get_accounts_to_use(self) -> None:
@@ -399,7 +400,7 @@ class Search:
             account["proxy"] = self.__get_new_proxy()
             accounts_to_use.append(account)
         
-        save_account_json(self.accounts_json, self.accounts_json_path)
+        save_account_json(self.accounts_json, self.twitter_accounts)
         return accounts_to_use
 
     def __new_session(self, **kwargs) -> None:
@@ -410,7 +411,7 @@ class Search:
                 self.__handle_cookies(client, account)
                 self.session = client
                 self.current_account = account
-                save_account_json(self.accounts_json, self.accounts_json_path)
+                save_account_json(self.accounts_json, self.twitter_accounts)
                 return True
             except Exception:
                 continue

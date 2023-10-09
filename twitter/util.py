@@ -5,8 +5,8 @@ from logging import Logger
 from pathlib import Path
 from urllib.parse import urlsplit, urlencode, urlunsplit, parse_qs, quote
 import json
-from typing import Any, Dict
-
+from typing import Any, Dict, Union
+from io import StringIO, BytesIO
 import orjson
 from httpx import Response, Client
 
@@ -248,13 +248,34 @@ def get_code(cls, retries=5) -> str | None:
         print(f'Retrying in {f"{t:.2f}"} seconds')
         time.sleep(t)
 
-def read_account_json(file_path: str) -> Any:
-    with open(file_path, 'r') as f:
-        return json.load(f)
+def read_account_json(twitter_accounts: Union[str, Dict]) -> Any:
+    if isinstance(twitter_accounts, str):
+        with open(twitter_accounts, 'r') as f:
+            return json.load(f)
+        
+    if isinstance(twitter_accounts, dict):
+        buffer = BytesIO()
+        twitter_accounts["s3"].download_fileobj(twitter_accounts["bucket_name"], twitter_accounts["file_name"], buffer)
+        buffer.seek(0)
+        return json.load(buffer)
     
-def save_account_json(data: Any, file_path: str) -> None:
-    with open(file_path, 'w') as f:
-        json.dump(data, f, indent=4)
+    else:
+        raise Exception("Your Twitter Account paramether is in the wrong format")
+    
+def save_account_json(data: Any, twitter_accounts: Union[str, Dict]) -> None:
+    if isinstance(twitter_accounts, str):
+        with open(twitter_accounts, 'w') as f:
+            json.dump(data, f, indent=4)
+
+    if isinstance(twitter_accounts, dict):
+        str_buffer = StringIO()
+        json.dump(data, str_buffer, indent=4)
+        byte_data = str_buffer.getvalue().encode()
+        buffer = BytesIO(byte_data)
+        twitter_accounts["s3"].upload_fileobj(buffer, twitter_accounts["bucket_name"], twitter_accounts["file_name"])
+        
+    else:
+        raise Exception("Your Twitter Account paramether is in the wrong format")
 
 def ensure_keys_exist(d: Dict[str, Any], keys_to_ensure: Dict[str, Any]) -> Dict[str, Any]:
     for key in keys_to_ensure:
