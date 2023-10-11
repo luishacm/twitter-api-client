@@ -70,6 +70,7 @@ class Search:
         
         self.twitter_accounts = twitter_accounts
         self.accounts_json = read_account_json(twitter_accounts)
+        self.accounts_json = random.sample(self.accounts_json, len(self.accounts_json))
         self.collection_limit_per_account = collection_limit_per_account
         self.hours_to_reset_collection = hours_to_reset_collection
         self.save = kwargs.get('save', False)
