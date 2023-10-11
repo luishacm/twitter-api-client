@@ -69,8 +69,6 @@ class Search:
         """
         
         self.twitter_accounts = twitter_accounts
-        self.accounts_json = read_account_json(twitter_accounts)
-        self.accounts_json = random.sample(self.accounts_json, len(self.accounts_json))
         self.collection_limit_per_account = collection_limit_per_account
         self.hours_to_reset_collection = hours_to_reset_collection
         self.save = kwargs.get('save', False)
@@ -83,6 +81,11 @@ class Search:
         self.total_collected_until_now = 0
         self.proxy_credentials = proxy_credentials
         self.__new_session(**kwargs)
+
+    def get_accounts_json(self):
+        accounts_json = read_account_json(self.twitter_accounts)
+        accounts_json = random.sample(accounts_json, len(accounts_json))
+        return accounts_json
 
     def run(self, queries: List[Dict], limit: int = math.inf, out: str = 'data/search_results', **kwargs: dict) -> List:
         """
@@ -356,15 +359,17 @@ class Search:
         if self.current_account is None:
             return
         
-        for account in self.accounts_json["accounts"]:
+        accounts_json = self.get_accounts_json()
+        for account in accounts_json["accounts"]:
             if account["email"] == self.current_account["email"]:
                 account = self.current_account
-                save_account_json(self.accounts_json, self.twitter_accounts)
+                save_account_json(accounts_json, self.twitter_accounts)
                 return
             
     def __get_accounts_to_use(self) -> None:
         accounts_to_use = []
-        for account in self.accounts_json["accounts"]:
+        accounts_json = self.get_accounts_json()
+        for account in accounts_json["accounts"]:
             account = ensure_keys_exist(account, self.keys_to_ensure)
             
             if account["disabled"] is True:
@@ -401,7 +406,7 @@ class Search:
             account["proxy"] = self.__get_new_proxy()
             accounts_to_use.append(account)
         
-        save_account_json(self.accounts_json, self.twitter_accounts)
+        save_account_json(accounts_json, self.twitter_accounts)
         return accounts_to_use
 
     def __new_session(self, **kwargs) -> None:
@@ -412,7 +417,7 @@ class Search:
                 self.__handle_cookies(client, account)
                 self.session = client
                 self.current_account = account
-                save_account_json(self.accounts_json, self.twitter_accounts)
+                self.__update_accounts_json()
                 return True
             except Exception:
                 continue
