@@ -84,7 +84,8 @@ class Search:
 
     def get_accounts_json(self):
         accounts_json = read_account_json(self.twitter_accounts)
-        accounts_json = random.sample(accounts_json, len(accounts_json))
+        accounts_list = random.sample(accounts_json["accounts"], len(accounts_json["accounts"]))
+        accounts_json["accounts"] = accounts_list
         return accounts_json
 
     def run(self, queries: List[Dict], limit: int = math.inf, out: str = 'data/search_results', **kwargs: dict) -> List:

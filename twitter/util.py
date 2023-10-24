@@ -253,7 +253,7 @@ def read_account_json(twitter_accounts: Union[str, Dict]) -> Any:
         with open(twitter_accounts, 'r') as f:
             return json.load(f)
         
-    if isinstance(twitter_accounts, dict):
+    elif isinstance(twitter_accounts, dict):
         buffer = BytesIO()
         twitter_accounts["s3"].download_fileobj(twitter_accounts["bucket_name"], twitter_accounts["file_name"], buffer)
         buffer.seek(0)
@@ -266,13 +266,15 @@ def save_account_json(data: Any, twitter_accounts: Union[str, Dict]) -> None:
     if isinstance(twitter_accounts, str):
         with open(twitter_accounts, 'w') as f:
             json.dump(data, f, indent=4)
+            return
 
-    if isinstance(twitter_accounts, dict):
+    elif isinstance(twitter_accounts, dict):
         str_buffer = StringIO()
         json.dump(data, str_buffer, indent=4)
         byte_data = str_buffer.getvalue().encode()
         buffer = BytesIO(byte_data)
         twitter_accounts["s3"].upload_fileobj(buffer, twitter_accounts["bucket_name"], twitter_accounts["file_name"])
+        return
         
     else:
         raise Exception("Your Twitter Account paramether is in the wrong format")
