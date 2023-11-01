@@ -355,6 +355,7 @@ class Search:
         cookies_dict = dict(client.cookies)
         if cookies_dict != account["cookies"]:
             account["cookies"] = cookies_dict
+        return account
 
     def __update_accounts_json(self):
         if self.current_account is None:
@@ -415,7 +416,7 @@ class Search:
         for account in accounts_to_use:
             try:
                 client = self._validate_session(account["email"], account["username"], account["password"], account["cookies"], account["proxy"], **kwargs)
-                self.__handle_cookies(client, account)
+                account = self.__handle_cookies(client, account)
                 self.session = client
                 self.current_account = account
                 self.__update_accounts_json()
@@ -491,18 +492,19 @@ class Search:
             if isinstance(cookies, dict) and all(cookies.get(c) for c in {'ct0', 'auth_token'}):
                 _session = Client(cookies=cookies, follow_redirects=True, proxies=proxies)
                 _session.headers.update(get_headers(_session))
+                AsyncClient(headers=get_headers(_session), proxies=proxies)
                 return _session
         except Exception:
             pass
 
-        if cookies is None:
-            cookies = kwargs.get('cookies')
-
-        # try validating cookies from file
         if isinstance(cookies, str):
-            _session = Client(cookies=orjson.loads(Path(cookies).read_bytes(), proxies=proxies), follow_redirects=True)
-            _session.headers.update(get_headers(_session))
-            return _session
+            try:
+                _session = Client(cookies=orjson.loads(Path(cookies).read_bytes(), proxies=proxies), follow_redirects=True)
+                _session.headers.update(get_headers(_session))
+                AsyncClient(headers=get_headers(_session), proxies=proxies)
+                return _session
+            except Exception:
+                pass
         
         if all((email, username, password)):
             return login(email, username, password, **kwargs)
