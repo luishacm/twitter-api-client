@@ -362,9 +362,9 @@ class Search:
             return
         
         accounts_json = self.get_accounts_json()
-        for account in accounts_json["accounts"]:
+        for idx, account in enumerate(accounts_json["accounts"]):
             if account["email"] == self.current_account["email"]:
-                account = self.current_account
+                accounts_json["accounts"][idx] = self.current_account
                 save_account_json(accounts_json, self.twitter_accounts)
                 return
             
