@@ -3,14 +3,14 @@ from setuptools import find_packages, setup
 from pathlib import Path
 
 install_requires = [
-    "aiofiles",
-    "websockets",
-    "nest_asyncio",
-    "httpx",
-    "tqdm",
-    "orjson",
-    "pandas",
-    "openpyxl",
+    "aiofiles>=23.2.1",
+    "websockets>=11.0.3",
+    "nest_asyncio>=1.5.8",
+    "httpx>=0.25.0",
+    "tqdm>=4.66.1",
+    "orjson>=3.9.7",
+    "pandas>=2.1.1",
+    "openpyxl>=3.1.2",
     'uvloop; platform_system != "Windows"',
 ]
 
@@ -452,8 +452,8 @@ setup(
     '''),
     python_requires=">=3.10.10",
     long_description_content_type='text/markdown',
-    author_email='luishacmartins@gmail.com',
-    url='https://github.com/luishacm/twitter-api-client',
+    author_email='contato@voxradar.com.br',
+    url='https://github.com/voxradar/twitter-api-client',
     install_requires=install_requires,
     keywords='twitter api client async search automation bot scrape',
     packages=find_packages(),
