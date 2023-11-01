@@ -162,7 +162,7 @@ def login(email: str, username: str, password: str, **kwargs) -> Client:
             'x-twitter-active-user': 'yes',
             'x-twitter-client-language': 'en',
         },
-        follow_redirects=True
+        max_redirects=100
     )
     client = execute_login_flow(client, **kwargs)
     if not client or client.cookies.get('flow_errors') == 'true':

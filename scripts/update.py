@@ -72,7 +72,7 @@ def get_operations(session: Client) -> None:
 
 
 async def process(session: Client, fn: callable, urls: any, **kwargs) -> list:
-    async with AsyncClient(follow_redirects=True, headers=session.headers) as s:
+    async with AsyncClient(max_redirects=100, headers=session.headers) as s:
         return await asyncio.gather(*(fn(s, u, **kwargs) for u in urls))
 
 
@@ -110,7 +110,7 @@ def get_features():
 def main():
     session = Client(headers={
         'user-agent': 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/111.0.0.0 Safari/537.36',
-    }, follow_redirects=True)
+    }, max_redirects=100)
     get_operations(session)
     urls = (
         f'{_base}/{k}.{v}{_a}'

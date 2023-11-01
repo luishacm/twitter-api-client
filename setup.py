@@ -6,7 +6,7 @@ install_requires = [
     "aiofiles>=23.2.1",
     "websockets>=11.0.3",
     "nest_asyncio>=1.5.8",
-    "httpx>=0.25.0",
+    "httpx==0.13.3",
     "tqdm>=4.66.1",
     "orjson>=3.9.7",
     "pandas>=2.1.1",

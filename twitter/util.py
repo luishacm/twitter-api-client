@@ -17,7 +17,7 @@ def init_session():
     client = Client(headers={
         'authorization': 'Bearer AAAAAAAAAAAAAAAAAAAAANRILgAAAAAAnNwIzUejRCOuH5E6I8xnZz4puTs=1Zv7ttfk8LF81IUq16cHjhLTvJu4FA33AGWWjCpTnA',
         'user-agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/113.0.0.0 Safari/537.36',
-    }, follow_redirects=True)
+    }, max_redirects=100)
     r = client.post('https://api.twitter.com/1.1/guest/activate.json').json()
     client.headers.update({
         'content-type': 'application/json',

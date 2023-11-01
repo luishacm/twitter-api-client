@@ -490,7 +490,7 @@ class Search:
 
         try:
             if isinstance(cookies, dict) and all(cookies.get(c) for c in {'ct0', 'auth_token'}):
-                _session = Client(cookies=cookies, follow_redirects=True, proxies=proxies)
+                _session = Client(cookies=cookies, max_redirects=100, proxies=proxies)
                 _session.headers.update(get_headers(_session))
                 AsyncClient(headers=get_headers(_session), proxies=proxies)
                 return _session
@@ -499,7 +499,7 @@ class Search:
 
         if isinstance(cookies, str):
             try:
-                _session = Client(cookies=orjson.loads(Path(cookies).read_bytes(), proxies=proxies), follow_redirects=True)
+                _session = Client(cookies=orjson.loads(Path(cookies).read_bytes(), proxies=proxies), max_redirects=100)
                 _session.headers.update(get_headers(_session))
                 AsyncClient(headers=get_headers(_session), proxies=proxies)
                 return _session
