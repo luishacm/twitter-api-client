@@ -141,6 +141,9 @@ class Search:
         return df
 
     async def process(self, queries: list[dict], limit: int, out: Path, **kwargs) -> list:
+        if self.session is None:
+            print("There are no sessions available, check to see if your accounts are blocked")
+            raise Exception ("No accounts to be used")
         async with AsyncClient(headers=get_headers(self.session), proxies=self.current_account["proxy"]) as s:
             self.client = s
             return await asyncio.gather(*(self.paginate(q, limit, out, **kwargs) for q in queries))
@@ -421,8 +424,15 @@ class Search:
                 self.current_account = account
                 self.__update_accounts_json()
                 return True
-            except Exception:
+            except Exception as error:
+                print(f"This account hasn't been able to login: {error}")
+                account["cookies"] = None
+                account["blocked"] = True
+                self.current_account = account
+                self.session = None
+                self.__update_accounts_json()
                 continue
+        print("No account to be used, all blocked")
         return False
     
     def __get_new_proxy(self) -> Optional[Dict]:
