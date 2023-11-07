@@ -425,7 +425,8 @@ class Search:
                 self.__update_accounts_json()
                 return True
             except Exception as error:
-                print(f"This account hasn't been able to login: {error}")
+                email = account['email']
+                print(f"The account with the email '{email}' hasn't been able to login: {error}")
                 account["cookies"] = None
                 account["blocked"] = True
                 self.current_account = account
