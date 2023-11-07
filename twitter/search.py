@@ -383,7 +383,6 @@ class Search:
             if account["last_collection_date"] is None:
                 account["last_collection_count"] = 0
                 account["blocked"] = False
-                account["proxy"] = self.__get_new_proxy()
                 accounts_to_use.append(account)
                 continue
             
@@ -392,7 +391,6 @@ class Search:
                 if datetime.now() - last_collection_date >= timedelta(hours=self.hours_to_reset_collection):
                     account["last_collection_count"] = 0
                     account["blocked"] = False
-                    account["proxy"] = self.__get_new_proxy()
                     accounts_to_use.append(account)
                     continue
                 else:
@@ -402,13 +400,11 @@ class Search:
                 last_collection_date = datetime.fromisoformat(account["last_collection_date"])
                 if datetime.now() - last_collection_date >= timedelta(hours=self.hours_to_reset_collection):
                     account["last_collection_count"] = 0
-                    account["proxy"] = self.__get_new_proxy()
                     accounts_to_use.append(account)
                     continue
                 else:
                     continue
             
-            account["proxy"] = self.__get_new_proxy()
             accounts_to_use.append(account)
         
         save_account_json(accounts_json, self.twitter_accounts)
@@ -421,6 +417,7 @@ class Search:
                 client = self._validate_session(account["email"], account["username"], account["password"], account["cookies"], account["proxy"], **kwargs)
                 account = self.__handle_cookies(client, account)
                 self.session = client
+                account["proxy"] = self.__get_new_proxy()
                 self.current_account = account
                 self.__update_accounts_json()
                 return True
