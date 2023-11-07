@@ -414,10 +414,10 @@ class Search:
         accounts_to_use = self.__get_accounts_to_use()
         for account in accounts_to_use:
             try:
+                account["proxy"] = self.__get_new_proxy()
                 client = self._validate_session(account["email"], account["username"], account["password"], account["cookies"], account["proxy"], **kwargs)
                 account = self.__handle_cookies(client, account)
                 self.session = client
-                account["proxy"] = self.__get_new_proxy()
                 self.current_account = account
                 self.__update_accounts_json()
                 return True
