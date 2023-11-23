@@ -114,6 +114,7 @@ class Search:
         tweets = [y for x in self.results for y in x if not y.get('entryId').startswith('promoted')]
 
         tweets_list = []
+        df = pd.DataFrame()
         for tweet in tweets:
             try:
                 tweet_info = find_key(tweet, 'tweet_results')[0]["result"]["legacy"]
@@ -129,12 +130,14 @@ class Search:
 
             tweets_list.append(combined_dict)
         
-        df = pd.DataFrame(tweets_list)
-        df["created_at"] = pd.to_datetime(df['created_at'], format="%a %b %d %H:%M:%S %z %Y")
-        df.sort_values('created_at', ascending=False, inplace=True)
-        df.dropna(subset='user_id_str', inplace=True)
-        df.reset_index(drop=True, inplace=True)
-        df = self.__organize_dataframe(df)
+        if len(tweets_list) > 0:
+            df = pd.DataFrame(tweets_list)
+            df["created_at"] = pd.to_datetime(df['created_at'], format="%a %b %d %H:%M:%S %z %Y")
+            df.sort_values('created_at', ascending=False, inplace=True)
+            df.dropna(subset='user_id_str', inplace=True)
+            df.reset_index(drop=True, inplace=True)
+            df = self.__organize_dataframe(df)
+        
         return df
 
     async def process(self, queries: list[dict], limit: int, **kwargs) -> list:
