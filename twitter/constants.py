@@ -34,14 +34,7 @@ LOG_CONFIG = {
             'level': 'DEBUG',
             'formatter': 'standard',
             'stream': 'ext://sys.stdout',
-        },
-        'file': {
-            'class': 'logging.FileHandler',
-            'level': 'DEBUG',
-            'formatter': 'standard',
-            'filename': 'twitter.log',
-            'mode': 'a',
-        },
+        }
     },
     'loggers': {
         'twitter': {
