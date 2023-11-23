@@ -88,22 +88,19 @@ class Search:
         accounts_json["accounts"] = accounts_list
         return accounts_json
 
-    def run(self, queries: List[Dict], limit: int = math.inf, out: str = 'data/search_results', **kwargs: dict) -> List:
+    def run(self, queries: List[Dict], limit: int = math.inf, **kwargs: dict) -> List:
         """
         Executes the search based on the queries provided.
         
         Parameters:
         - queries (List[Dict]): A list of query dictionaries to be processed.
         - limit (int): The maximum number of results to retrieve. Default is infinity.
-        - out (str): The output directory where search results should be saved. Default is 'data/search_results'.
         - **kwargs (dict): Additional keyword arguments.
         
         Returns:
         List: The list containing the search results.
         """
-        out = Path(out)
-        out.mkdir(parents=True, exist_ok=True)
-        results = asyncio.run(self.process(queries, limit, out, **kwargs))
+        results = asyncio.run(self.process(queries, limit, **kwargs))
         self.results = results
         return results
     
@@ -140,15 +137,15 @@ class Search:
         df = self.__organize_dataframe(df)
         return df
 
-    async def process(self, queries: list[dict], limit: int, out: Path, **kwargs) -> list:
+    async def process(self, queries: list[dict], limit: int, **kwargs) -> list:
         if self.session is None:
             print("There are no sessions available, check to see if your accounts are blocked")
             raise Exception ("No accounts to be used")
         async with AsyncClient(headers=get_headers(self.session), proxies=self.current_account["proxy"]) as s:
             self.client = s
-            return await asyncio.gather(*(self.paginate(q, limit, out, **kwargs) for q in queries))
+            return await asyncio.gather(*(self.paginate(q, limit, **kwargs) for q in queries))
 
-    async def paginate(self, query: dict, limit: int, out: Path, **kwargs) -> list[dict]:
+    async def paginate(self, query: dict, limit: int, **kwargs) -> list[dict]:
         params = {
             'variables': {
                 'count': 20,
@@ -203,7 +200,6 @@ class Search:
             total |= set(find_key(entries, 'entryId'))
             if self.debug and self.logger:
                 self.logger.debug(f'{query["query"]}')
-            self.save and (out / f'{time.time_ns()}.json').write_bytes(orjson.dumps(entries))
 
     async def get(self, client: AsyncClient, params: dict) -> tuple:
         _, qid, name = Operation.SearchTimeline
