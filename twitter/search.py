@@ -12,7 +12,7 @@ from datetime import datetime, timedelta
 import pandas as pd
 
 import orjson
-from httpx import AsyncClient, Client
+from httpx import AsyncClient, Client, Proxy
 
 from .constants import *
 from .login import login
@@ -144,7 +144,7 @@ class Search:
         if self.session is None:
             print("There are no sessions available, check to see if your accounts are blocked")
             raise Exception ("No accounts to be used")
-        async with AsyncClient(headers=get_headers(self.session), proxies=self.current_account["proxy"]) as s:
+        async with AsyncClient(headers=get_headers(self.session), proxies=Proxy(self.current_account["proxy"])) as s:
             self.client = s
             return await asyncio.gather(*(self.paginate(q, limit, **kwargs) for q in queries))
 
@@ -177,7 +177,7 @@ class Search:
                 self.total_collected_until_now = len(total)
                 opened_session = self.__new_session()
                 if opened_session is True:
-                    self.client = AsyncClient(headers=get_headers(self.session), proxies=self.current_account["proxy"])
+                    self.client = AsyncClient(headers=get_headers(self.session), proxies=Proxy(self.current_account["proxy"]))
                     continue
                 else:
                     if self.debug and self.logger:
@@ -446,7 +446,7 @@ class Search:
             "http://": proxy_url,
             "https://": proxy_url,
             }
-        return proxy
+        return proxy_url
                 
     def __get_new_proxy_ip(self) -> Optional[str]:
         if self.proxy_credentials is None:
@@ -497,18 +497,18 @@ class Search:
 
         try:
             if isinstance(cookies, dict) and all(cookies.get(c) for c in {'ct0', 'auth_token'}):
-                _session = Client(cookies=cookies, max_redirects=100, proxies=proxies)
+                _session = Client(cookies=cookies, max_redirects=100, proxies=Proxy(proxies))
                 _session.headers.update(get_headers(_session))
-                AsyncClient(headers=get_headers(_session), proxies=proxies)
+                AsyncClient(headers=get_headers(_session), proxies=Proxy(proxies))
                 return _session
         except Exception:
             pass
 
         if isinstance(cookies, str):
             try:
-                _session = Client(cookies=orjson.loads(Path(cookies).read_bytes(), proxies=proxies), max_redirects=100)
+                _session = Client(cookies=orjson.loads(Path(cookies).read_bytes(), proxies=Proxy(proxies)), max_redirects=100)
                 _session.headers.update(get_headers(_session))
-                AsyncClient(headers=get_headers(_session), proxies=proxies)
+                AsyncClient(headers=get_headers(_session), proxies=Proxy(proxies))
                 return _session
             except Exception:
                 pass
