@@ -8,7 +8,7 @@ import json
 from typing import Any, Dict, Union
 from io import StringIO, BytesIO
 import orjson
-from httpx import Response, Client
+from httpx import Response, Client, Timeout
 
 from .constants import GREEN, MAGENTA, RED, RESET, ID_MAP
 
@@ -23,7 +23,8 @@ def init_session():
         'content-type': 'application/json',
         'x-guest-token': r['guest_token'],
         'x-twitter-active-user': 'yes',
-    })
+    },
+    timeout=Timeout(timeout=10.0))
     return client
 
 

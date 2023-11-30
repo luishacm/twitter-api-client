@@ -12,7 +12,7 @@ from datetime import datetime, timedelta
 import pandas as pd
 
 import orjson
-from httpx import AsyncClient, Client, Proxy
+from httpx import AsyncClient, Client, Proxy, Timeout
 
 from .constants import *
 from .login import login
@@ -144,7 +144,7 @@ class Search:
         if self.session is None:
             print("There are no sessions available, check to see if your accounts are blocked")
             raise Exception ("No accounts to be used")
-        async with AsyncClient(headers=get_headers(self.session), proxies=Proxy(self.current_account["proxy"])) as s:
+        async with AsyncClient(headers=get_headers(self.session), proxies=Proxy(self.current_account["proxy"]), timeout=Timeout(timeout=10.0)) as s:
             self.client = s
             return await asyncio.gather(*(self.paginate(q, limit, **kwargs) for q in queries))
 
@@ -177,7 +177,7 @@ class Search:
                 self.total_collected_until_now = len(total)
                 opened_session = self.__new_session()
                 if opened_session is True:
-                    self.client = AsyncClient(headers=get_headers(self.session), proxies=Proxy(self.current_account["proxy"]))
+                    self.client = AsyncClient(headers=get_headers(self.session), proxies=Proxy(self.current_account["proxy"]), timeout=Timeout(timeout=10.0))
                     continue
                 else:
                     if self.debug and self.logger:
@@ -470,7 +470,7 @@ class Search:
             "skipIspStatic": True
         }
 
-        with Client() as client:
+        with Client(timeout=Timeout(timeout=10.0)) as client:
             response = client.post(url, json=data, headers=headers)
 
         return response.json()[0]
@@ -497,24 +497,29 @@ class Search:
 
         try:
             if isinstance(cookies, dict) and all(cookies.get(c) for c in {'ct0', 'auth_token'}):
-                _session = Client(cookies=cookies, max_redirects=100, proxies=Proxy(proxies))
+                _session = Client(cookies=cookies, max_redirects=100, proxies=Proxy(proxies), timeout=Timeout(timeout=10.0))
                 _session.headers.update(get_headers(_session))
-                AsyncClient(headers=get_headers(_session), proxies=Proxy(proxies))
+                t = _session.get("https://api.ipify.org?format=json")
+                print(t.json())
                 return _session
         except Exception:
             pass
 
         if isinstance(cookies, str):
             try:
-                _session = Client(cookies=orjson.loads(Path(cookies).read_bytes(), proxies=Proxy(proxies)), max_redirects=100)
+                _session = Client(cookies=orjson.loads(Path(cookies).read_bytes(), proxies=Proxy(proxies)), max_redirects=100, timeout=Timeout(timeout=10.0))
                 _session.headers.update(get_headers(_session))
-                AsyncClient(headers=get_headers(_session), proxies=Proxy(proxies))
+                t = _session.get("https://api.ipify.org?format=json")
+                print(t.json())
                 return _session
             except Exception:
                 pass
         
         if all((email, username, password)):
-            return login(email, username, password, **kwargs)
+            _session = login(email, username, password, proxies, **kwargs)
+            t = _session.get("https://api.ipify.org?format=json")
+            print(t.json())
+            return _session
 
         raise Exception('Session not authenticated. '
                         'Please use an authenticated session or remove the `session` argument and try again.')

@@ -1,6 +1,6 @@
 import sys
 
-from httpx import Client
+from httpx import Client, Proxy, Timeout
 
 from .constants import GREEN, YELLOW, RED, BOLD, RESET
 from .util import find_key
@@ -146,7 +146,7 @@ def execute_login_flow(client: Client, **kwargs) -> Client | None:
     return client
 
 
-def login(email: str, username: str, password: str, **kwargs) -> Client:
+def login(email: str, username: str, password: str, proxies:Proxy, **kwargs) -> Client:
     client = Client(
         cookies={
             "email": email,
@@ -162,7 +162,9 @@ def login(email: str, username: str, password: str, **kwargs) -> Client:
             'x-twitter-active-user': 'yes',
             'x-twitter-client-language': 'en',
         },
-        max_redirects=100
+        max_redirects=100,
+        proxies=proxies,
+        timeout=Timeout(timeout=10.0)
     )
     client = execute_login_flow(client, **kwargs)
     if not client or client.cookies.get('flow_errors') == 'true':
