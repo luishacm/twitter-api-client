@@ -115,6 +115,7 @@ class Search:
 
         tweets_list = []
         df = pd.DataFrame()
+        print(tweets)
         for tweet in tweets:
             try:
                 tweet_info = find_key(tweet, 'tweet_results')[0]["result"]["legacy"]
