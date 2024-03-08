@@ -115,7 +115,6 @@ class Search:
 
         tweets_list = []
         df = pd.DataFrame()
-        print(tweets)
         for tweet in tweets:
             try:
                 tweet_info = find_key(tweet, 'tweet_results')[0]["result"]["legacy"]
@@ -138,7 +137,7 @@ class Search:
             df.dropna(subset='user_id_str', inplace=True)
             df.reset_index(drop=True, inplace=True)
             df = self.__organize_dataframe(df)
-        
+        df.to_csv("tweets.csv")
         return df
 
     async def process(self, queries: list[dict], limit: int, **kwargs) -> list:
