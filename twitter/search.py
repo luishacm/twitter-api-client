@@ -137,7 +137,6 @@ class Search:
             df.dropna(subset='user_id_str', inplace=True)
             df.reset_index(drop=True, inplace=True)
             df = self.__organize_dataframe(df)
-        df.to_csv("tweets.csv")
         return df
 
     async def process(self, queries: list[dict], limit: int, **kwargs) -> list:
@@ -318,7 +317,7 @@ class Search:
 
         if 'extended_entities' in df.columns:
             df['post_media'] = df['extended_entities'].apply(lambda x:
-                                                             [{'display_url': media.get('expanded_url', ''),
+                                                             [{'display_url': media.get('media_url_https', ''),
                                                                'media_key': media.get('media_key', ''),
                                                                'type': media.get('type', '')}
                                                                for media in x.get('media', [])]
