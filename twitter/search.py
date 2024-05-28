@@ -4,16 +4,13 @@ import math
 import platform
 import random
 import re
-import time
 from logging import Logger
 from pathlib import Path
 from typing import Any, List, Dict, Optional, Union
 from datetime import datetime, timedelta
 import pandas as pd
-
 import orjson
 from httpx import AsyncClient, Client, Proxy, Timeout
-
 from .constants import *
 from .login import login
 from .util import get_headers, find_key, build_params, read_account_json, save_account_json, ensure_keys_exist
@@ -143,9 +140,14 @@ class Search:
         if self.session is None:
             print("There are no sessions available, check to see if your accounts are blocked")
             raise Exception ("No accounts to be used")
-        async with AsyncClient(headers=get_headers(self.session), proxies=Proxy(self.current_account["proxy"]), timeout=Timeout(timeout=10.0)) as s:
-            self.client = s
-            return await asyncio.gather(*(self.paginate(q, limit, **kwargs) for q in queries))
+        if self.current_account["proxy"]:
+            async with AsyncClient(headers=get_headers(self.session), proxies=Proxy(self.current_account["proxy"]), timeout=Timeout(timeout=10.0)) as s:
+                self.client = s
+                return await asyncio.gather(*(self.paginate(q, limit, **kwargs) for q in queries))
+        else:
+            async with AsyncClient(headers=get_headers(self.session), timeout=Timeout(timeout=10.0)) as s:
+                self.client = s
+                return await asyncio.gather(*(self.paginate(q, limit, **kwargs) for q in queries))
 
     async def paginate(self, query: dict, limit: int, **kwargs) -> list[dict]:
         params = {
@@ -166,36 +168,31 @@ class Search:
             if cursor:
                 params['variables']['cursor'] = cursor
             data, entries, cursor = await self.backoff(lambda: self.get(self.client, params), **kwargs)
-            if data is None or ((len(total) - self.total_collected_until_now) >= (self.collection_limit_per_account - self.current_account["last_collection_count"])):
-                print("Starting new session")
+            if data is None or self.current_account["blocked"] is True:
                 self.current_account["last_collection_count"] = self.current_account["last_collection_count"] + (len(total)- self.total_collected_until_now)
                 self.current_account["last_collection_date"] = datetime.now().isoformat()
-                if data is None and entries is None:
+                if ((len(total) - self.total_collected_until_now) >= (self.collection_limit_per_account - self.current_account["last_collection_count"])):
                     self.current_account["blocked"] = True
+                    print(f"{RED}The account is being blocked because of the excess of collections{RESET}")
                 self.__update_accounts_json()
                 self.total_collected_until_now = len(total)
                 opened_session = self.__new_session()
                 if opened_session is True:
-                    self.client = AsyncClient(headers=get_headers(self.session), proxies=Proxy(self.current_account["proxy"]), timeout=Timeout(timeout=10.0))
+                    if self.current_account["proxy"]:
+                        self.client = AsyncClient(headers=get_headers(self.session), proxies=Proxy(self.current_account["proxy"]), timeout=Timeout(timeout=10.0))
+                    else:
+                        self.client = AsyncClient(headers=get_headers(self.session), timeout=Timeout(timeout=10.0))
                     continue
                 else:
-                    if self.debug and self.logger:
-                        self.logger.debug(
-                        f'[{RED}accounts ended{RESET}] Returned {len(total)} search results for {query["query"][:30]}...{query["query"][-30:]}')
-                    self.current_account["last_collection_count"] = self.current_account["last_collection_count"] + (len(total) - self.total_collected_until_now)
-                    self.current_account["last_collection_date"] = datetime.now().isoformat()
-                    self.current_account["blocked"] = False
-                    self.__update_accounts_json()
                     return res
                     
             res.extend(entries)
             if len(entries) <= 2 or len(total) >= limit:
-                if self.debug and self.logger: 
+                if self.debug and self.logger:
                     self.logger.debug(
                     f'[{GREEN}success{RESET}] Returned {len(total)} search results for {query["query"][:30]}...{query["query"][-30:]}')
                 self.current_account["last_collection_count"] = self.current_account["last_collection_count"] + (len(total) - self.total_collected_until_now)
                 self.current_account["last_collection_date"] = datetime.now().isoformat()
-                self.current_account["blocked"] = False
                 self.__update_accounts_json()
                 return res
             
@@ -208,7 +205,18 @@ class Search:
         r = await client.get(f'https://twitter.com/i/api/graphql/{qid}/{name}', params=build_params(params))
         data = r.json()
         cursor = self.get_cursor(data)
-        entries = [y for x in find_key(data, 'entries') for y in x if re.search(r'^(tweet|user)-', y['entryId'])]
+        if params.get("variables").get("product") == "Media":
+            pattern = r'^.*?(tweet|user)-'
+            entries = []
+            entries_find = find_key(data, 'entries')
+            items = find_key(entries_find, 'items')
+            for entry_list in items:
+                for y in entry_list:
+                    if isinstance(y, dict) and 'entryId' in y:
+                        if re.search(pattern, y['entryId']):
+                            entries.append(y)
+        else:
+            entries = [y for x in find_key(data, 'entries') for y in x if re.search(r'^.*?(tweet|user)-', y['entryId'])]
         for e in entries:
             e['query'] = params['variables']['rawQuery']
         return data, entries, cursor
@@ -225,14 +233,20 @@ class Search:
                 data, entries, cursor = await fn()
                 if errors := data.get('errors'):
                     for e in errors:
+                        message = e.get("message")
                         if self.debug and self.logger:
-                            message = e.get("message")
-                            if "authenticate" in message:
-                                self.current_account["cookies"] = None
-                                self.__update_accounts_json()
-                                self.logger.debug(f'{YELLOW} The cookies are no longer working, reseting them {RESET}')
-                                return None, False, None
                             self.logger.warning(f'{YELLOW}{message}{RESET}')
+                        if "authenticate" in message:
+                            self.current_account["cookies"] = None
+                            self.__update_accounts_json()
+                            print(f'{YELLOW}The cookies are no longer working, reseting them {RESET}: {self.current_account}')
+                            return None, False, None
+                        if "temporarily locked" in message:
+                            self.current_account["cookies"] = None
+                            self.current_account["blocked"] = True
+                            self.__update_accounts_json()
+                            print(f'{RED}The account was blocked {RESET}: {self.current_account}')
+                            return None, False, None
                         return [], [], ''
                 ids = set(find_key(data, 'entryId'))
                 if len(ids) >= 2:
@@ -241,6 +255,7 @@ class Search:
                 if i == retries:
                     if self.debug and self.logger:
                         self.logger.debug(f'Max retries exceeded\n{e}')
+                    print("Max retries exceeded")
                     return None, None, None
                 t = 2 ** i + random.random()
                 if self.debug and self.logger:
@@ -409,6 +424,7 @@ class Search:
         return accounts_to_use
 
     def __new_session(self, **kwargs) -> None:
+        print("Starting new session")
         accounts_to_use = self.__get_accounts_to_use()
         for account in accounts_to_use:
             try:
@@ -417,6 +433,7 @@ class Search:
                 account = self.__handle_cookies(client, account)
                 self.session = client
                 self.current_account = account
+                self.current_account["blocked"] = False
                 self.__update_accounts_json()
                 return True
             except Exception as error:
@@ -426,6 +443,8 @@ class Search:
                 account["blocked"] = True
                 self.current_account = account
                 self.session = None
+                self.current_account["last_collection_count"] = 0
+                self.current_account["last_collection_date"] = datetime.now().isoformat()
                 self.__update_accounts_json()
                 continue
         print("No account to be used, all blocked")
