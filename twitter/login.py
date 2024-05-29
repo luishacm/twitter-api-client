@@ -164,9 +164,10 @@ def login(email: str, username: str, password: str, proxies:Proxy, **kwargs) -> 
         },
         max_redirects=100,
         proxies=proxies,
-        timeout=Timeout(timeout=10.0)
+        timeout=Timeout(timeout=15.0)
     )
     client = execute_login_flow(client, **kwargs)
     if not client or client.cookies.get('flow_errors') == 'true':
+        print(f'[{RED}error{RESET}] {BOLD}{username}{RESET} login failed')
         raise Exception(f'[{RED}error{RESET}] {BOLD}{username}{RESET} login failed')
     return client
