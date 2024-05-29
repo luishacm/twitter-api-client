@@ -61,7 +61,6 @@ class Search:
         - hours_to_reset_collection (int): The number of hours to reset the collection limit. Default is 12.
         - proxy_credentials (Dict): {"username": username, "password": password, "bearer_token": bearer_token} for IPRoyal account.
         - save (bool): Whether to save the data or not. Default is False.
-        - debug (bool): Whether to show debugging logs or not. Default is False.
         - **kwargs (dict): Additional keyword arguments.
         """
         
@@ -69,7 +68,6 @@ class Search:
         self.collection_limit_per_account = collection_limit_per_account
         self.hours_to_reset_collection = hours_to_reset_collection
         self.save = kwargs.get('save', False)
-        self.debug = kwargs.get('debug', False)
         self.logger = self._init_logger(**kwargs)
         self.session = None
         self.client = None
@@ -141,11 +139,11 @@ class Search:
             print("There are no sessions available, check to see if your accounts are blocked")
             raise Exception ("No accounts to be used")
         if self.current_account["proxy"]:
-            async with AsyncClient(headers=get_headers(self.session), proxies=Proxy(self.current_account["proxy"]), timeout=Timeout(timeout=10.0)) as s:
+            async with AsyncClient(headers=get_headers(self.session), proxies=Proxy(self.current_account["proxy"]), timeout=Timeout(timeout=15.0)) as s:
                 self.client = s
                 return await asyncio.gather(*(self.paginate(q, limit, **kwargs) for q in queries))
         else:
-            async with AsyncClient(headers=get_headers(self.session), timeout=Timeout(timeout=10.0)) as s:
+            async with AsyncClient(headers=get_headers(self.session), timeout=Timeout(timeout=15.0)) as s:
                 self.client = s
                 return await asyncio.gather(*(self.paginate(q, limit, **kwargs) for q in queries))
 
@@ -173,32 +171,29 @@ class Search:
                 self.current_account["last_collection_date"] = datetime.now().isoformat()
                 if ((len(total) - self.total_collected_until_now) >= (self.collection_limit_per_account - self.current_account["last_collection_count"])):
                     self.current_account["blocked"] = True
-                    print(f"{RED}The account is being blocked because of the excess of collections{RESET}")
+                    print(f"{GREEN}The account is being blocked to avoid excess of collections{RESET}")
                 self.__update_accounts_json()
                 self.total_collected_until_now = len(total)
                 opened_session = self.__new_session()
                 if opened_session is True:
                     if self.current_account["proxy"]:
-                        self.client = AsyncClient(headers=get_headers(self.session), proxies=Proxy(self.current_account["proxy"]), timeout=Timeout(timeout=10.0))
+                        self.client = AsyncClient(headers=get_headers(self.session), proxies=Proxy(self.current_account["proxy"]), timeout=Timeout(timeout=15.0))
                     else:
-                        self.client = AsyncClient(headers=get_headers(self.session), timeout=Timeout(timeout=10.0))
+                        self.client = AsyncClient(headers=get_headers(self.session), timeout=Timeout(timeout=15.0))
                     continue
                 else:
                     return res
                     
             res.extend(entries)
             if len(entries) <= 2 or len(total) >= limit:
-                if self.debug and self.logger:
-                    self.logger.debug(
-                    f'[{GREEN}success{RESET}] Returned {len(total)} search results for {query["query"][:30]}...{query["query"][-30:]}')
+                print(f'[{GREEN}success{RESET}] Returned {len(total)} search results for {query["query"][:30]}...{query["query"][-30:]}')
                 self.current_account["last_collection_count"] = self.current_account["last_collection_count"] + (len(total) - self.total_collected_until_now)
                 self.current_account["last_collection_date"] = datetime.now().isoformat()
                 self.__update_accounts_json()
                 return res
             
             total |= set(find_key(entries, 'entryId'))
-            if self.debug and self.logger:
-                self.logger.debug(f'{query["query"]}')
+            print(f'{query["query"]}')
 
     async def get(self, client: AsyncClient, params: dict) -> tuple:
         _, qid, name = Operation.SearchTimeline
@@ -234,18 +229,24 @@ class Search:
                 if errors := data.get('errors'):
                     for e in errors:
                         message = e.get("message")
-                        if self.debug and self.logger:
-                            self.logger.warning(f'{YELLOW}{message}{RESET}')
+                        print(f'{YELLOW}{message}{RESET}')
+                        if "Rate limit exceeded" in message:
+                            self.current_account["cookies"] = None
+                            self.current_account["blocked"] = True
+                            self.__update_accounts_json()
+                            print(f'{YELLOW}The account exceeded the rate limit{RESET}: {self.current_account["email"]}')
+                            return None, False, None
+                        
                         if "authenticate" in message:
                             self.current_account["cookies"] = None
                             self.__update_accounts_json()
-                            print(f'{YELLOW}The cookies are no longer working, reseting them {RESET}: {self.current_account}')
+                            print(f'{YELLOW}The cookies are no longer working, reseting them {RESET}: {self.current_account["email"]}')
                             return None, False, None
                         if "temporarily locked" in message:
                             self.current_account["cookies"] = None
                             self.current_account["blocked"] = True
                             self.__update_accounts_json()
-                            print(f'{RED}The account was blocked {RESET}: {self.current_account}')
+                            print(f'{RED}The account was blocked {RESET}: {self.current_account["email"]}')
                             return None, False, None
                         return [], [], ''
                 ids = set(find_key(data, 'entryId'))
@@ -253,13 +254,10 @@ class Search:
                     return data, entries, cursor
             except Exception as e:
                 if i == retries:
-                    if self.debug and self.logger:
-                        self.logger.debug(f'Max retries exceeded\n{e}')
                     print("Max retries exceeded")
                     return None, None, None
                 t = 2 ** i + random.random()
-                if self.debug and self.logger:
-                    self.logger.debug(f'Retrying in {f"{t:.2f}"} seconds\t\t{e}')
+                print(f'Retrying in {f"{t:.2f}"} seconds\t\t{e}')
                 await asyncio.sleep(t)
 
     def __organize_dataframe(self, df: pd.DataFrame) -> pd.DataFrame:
@@ -427,22 +425,21 @@ class Search:
         print("Starting new session")
         accounts_to_use = self.__get_accounts_to_use()
         for account in accounts_to_use:
+            email = account['email']
+            self.current_account = account
             try:
                 account["proxy"] = self.__get_new_proxy()
                 client = self._validate_session(account["email"], account["username"], account["password"], account["cookies"], account["proxy"], **kwargs)
                 account = self.__handle_cookies(client, account)
                 self.session = client
-                self.current_account = account
                 self.current_account["blocked"] = False
                 self.__update_accounts_json()
+                print(f"Using the account: {email}")
                 return True
-            except Exception as error:
-                email = account['email']
-                print(f"The account with the email '{email}' hasn't been able to login: {error}")
-                account["cookies"] = None
-                account["blocked"] = True
-                self.current_account = account
+            except Exception as error:        
+                print(f"The account hasn't been able to login: {email} | {error}")
                 self.session = None
+                self.current_account["cookies"] = None
                 self.current_account["last_collection_count"] = 0
                 self.current_account["last_collection_date"] = datetime.now().isoformat()
                 self.__update_accounts_json()
@@ -488,7 +485,7 @@ class Search:
             "skipIspStatic": True
         }
 
-        with Client(timeout=Timeout(timeout=10.0)) as client:
+        with Client(timeout=Timeout(timeout=15.0)) as client:
             response = client.post(url, json=data, headers=headers)
 
         return response.json()[0]
@@ -515,30 +512,31 @@ class Search:
 
         try:
             if isinstance(cookies, dict) and all(cookies.get(c) for c in {'ct0', 'auth_token'}):
-                _session = Client(cookies=cookies, max_redirects=100, proxies=Proxy(proxies), timeout=Timeout(timeout=10.0))
+                _session = Client(cookies=cookies, max_redirects=100, proxies=Proxy(proxies), timeout=Timeout(timeout=15.0))
                 _session.headers.update(get_headers(_session))
-                t = _session.get("https://api.ipify.org?format=json")
-                print(t.json())
+                # t = _session.get("https://api.ipify.org?format=json")
+                # print(t.json())
                 return _session
         except Exception:
             pass
 
         if isinstance(cookies, str):
             try:
-                _session = Client(cookies=orjson.loads(Path(cookies).read_bytes(), proxies=Proxy(proxies)), max_redirects=100, timeout=Timeout(timeout=10.0))
+                _session = Client(cookies=orjson.loads(Path(cookies).read_bytes(), proxies=Proxy(proxies)), max_redirects=100, timeout=Timeout(timeout=15.0))
                 _session.headers.update(get_headers(_session))
-                t = _session.get("https://api.ipify.org?format=json")
-                print(t.json())
+                # t = _session.get("https://api.ipify.org?format=json")
+                # print(t.json())
                 return _session
             except Exception:
                 pass
         
         if all((email, username, password)):
             _session = login(email, username, password, proxies, **kwargs)
-            t = _session.get("https://api.ipify.org?format=json")
-            print(t.json())
+            # t = _session.get("https://api.ipify.org?format=json")
+            # print(t.json())
             return _session
 
+        print(f"Could not authenticate the session, something went wrong with the account: {email}")
         raise Exception('Session not authenticated. '
                         'Please use an authenticated session or remove the `session` argument and try again.')
 
