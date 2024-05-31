@@ -440,6 +440,7 @@ class Search:
                 print(f"The account hasn't been able to login: {email} | {error}")
                 self.session = None
                 self.current_account["cookies"] = None
+                self.current_account["blocked"] = True
                 self.current_account["last_collection_count"] = 0
                 self.current_account["last_collection_date"] = datetime.now().isoformat()
                 self.__update_accounts_json()
