@@ -328,16 +328,45 @@ class Search:
         else:
             df['post_location'] = None
 
+        
+        df['post_media'] = None
         if 'extended_entities' in df.columns:
-            df['post_media'] = df['extended_entities'].apply(lambda x:
-                                                             [{'display_url': media.get('media_url_https', ''),
-                                                               'media_key': media.get('media_key', ''),
-                                                               'type': media.get('type', '')}
-                                                               for media in x.get('media', [])]
-                                                               if isinstance(x, dict) else None
-                                                               )
-        else:
-            df['post_media'] = None
+            
+            for idx, value in enumerate(df['extended_entities']):
+                media_iter = value.get('media', [])
+                post_media_list = []
+                for media in media_iter:
+                    if not isinstance(media, dict):
+                        df.loc[idx, 'post_media'] = None
+                        break
+
+                    if media.get('type') == 'video':
+                        video = media.get('video_info').get('variants')
+                        if video:                    
+                            chosen_video = max(video, key=lambda x: x.get('bitrate', 0))
+                            post_media_list.append({
+                                'display_url': chosen_video.get('url', ''),
+                                'media_key': media.get('media_key', ''),
+                                'type': 'video'
+                            })
+                            post_media_list.append({
+                                'display_url': media.get('media_url_https', ''),
+                                'media_key': media.get('media_key', ''),
+                                'type': 'thumbnail'
+                            })
+
+
+                    elif media.get('type') == 'photo':
+                        post_media_list.append({
+                            'display_url': media.get('media_url_https', ''),
+                            'media_key': media.get('media_key', ''),
+                            'type': 'photo'
+                        })
+                    else:
+                        df.loc[idx, 'post_media'] = None
+                        continue
+
+                df.at[idx, 'post_media'] = post_media_list
 
         df["post_language"] = df["author_language"]
 
