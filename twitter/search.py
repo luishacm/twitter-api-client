@@ -331,8 +331,9 @@ class Search:
         
         df['post_media'] = None
         if 'extended_entities' in df.columns:
-            
             for idx, value in enumerate(df['extended_entities']):
+                if not isinstance(value, dict):
+                    continue
                 media_iter = value.get('media', [])
                 post_media_list = []
                 for media in media_iter:
